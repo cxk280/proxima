@@ -22,4 +22,37 @@ size — so the **cheapest fractional A16 at ~$0.032/hr** per region is plenty.
 Start with 3–4 regions to keep it cheap; the region list scales later. **Destroy the GPU slices when
 not in use.**
 
-See [`PLAN.md`](./PLAN.md) for the full concept and build plan.
+See [`PLAN.md`](./PLAN.md) for the full concept and build plan, and [`VIEWS.md`](./VIEWS.md)
+for the source-of-truth description of every view.
+
+## Development
+
+The web app is a **Next.js (App Router) + TypeScript + Tailwind CSS v4** project. The live
+latency/globe data is currently a **deterministic simulated provider** (`lib/mesh`) behind a
+`MeshProvider` interface — no GPU spend, demo-ready — designed so a real probe backend +
+`connect()` SDK can drop in later without touching the UI.
+
+```bash
+npm install
+npm run dev        # http://localhost:3000
+```
+
+Other scripts:
+
+```bash
+npm run build        # production build
+npm run typecheck    # tsc --noEmit
+npm run lint         # next lint
+npm test             # vitest (data-layer + region-selection unit tests)
+npm run format       # prettier --write .
+```
+
+### Project layout
+
+| Path | What |
+|---|---|
+| `app/` | App Router pages — Home (`page.tsx`) plus stubbed `demo` / `leaderboard` / `mesh` / `docs` routes |
+| `components/globe/` | The reusable animated wireframe `Globe` (SVG, SSR-safe) |
+| `components/shell/` | Global chrome — `TopBar`, `Footer`, `ConnectionBanner`, `Shell` |
+| `components/ui/` | Primitives — `Button`, `StatTile`, `MeshPill` |
+| `lib/mesh/` | Region catalog, geo/projection math, and the simulated probe provider |
