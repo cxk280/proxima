@@ -4,8 +4,10 @@ import {
   graticulePaths,
   project,
   REGIONS,
+  type GeoPoint,
   type Health,
   type Origin,
+  type ProjectedPoint,
   type Projection,
   type Region,
 } from "@/lib/mesh";
@@ -15,6 +17,25 @@ const HEALTH_COLOR: Record<Health, string> = {
   degraded: "#fbbf24",
   down: "#f04060",
 };
+
+/** A single origin→region link drawn on the globe (used by multi-route views). */
+export interface GlobeRoute {
+  origin: GeoPoint;
+  region: GeoPoint;
+  accent?: string;
+}
+
+/** Lift an arc off the sphere: push its midpoint away from the globe centre. */
+function buildArc(a: ProjectedPoint, b: ProjectedPoint, cx: number, cy: number, lift: number) {
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  const dx = mx - cx;
+  const dy = my - cy;
+  const len = Math.hypot(dx, dy) || 1;
+  const apex = { x: mx + (dx / len) * lift, y: my + (dy / len) * lift };
+  const d = `M${a.x.toFixed(1)} ${a.y.toFixed(1)} Q${apex.x.toFixed(1)} ${apex.y.toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
+  return { d, apex };
+}
 
 export interface GlobeProps {
   /** Region dots to plot. Defaults to the full mesh. */
@@ -27,6 +48,8 @@ export interface GlobeProps {
   rttMs?: number | null;
   /** Colour of the active arc/region (defaults to the region's health colour). */
   accent?: string;
+  /** Extra origin→region links to draw (no badge) — used by the leaderboard globe. */
+  routes?: GlobeRoute[];
   /** viewBox size in px. */
   size?: number;
   className?: string;
@@ -44,6 +67,7 @@ export function Globe({
   region = null,
   rttMs = null,
   accent,
+  routes,
   size = 520,
   className,
 }: GlobeProps) {
@@ -62,19 +86,17 @@ export function Globe({
   const regionPt = region ? project(region, proj) : null;
   const hasArc = originPt?.visible && regionPt?.visible;
 
-  // Lift the arc off the sphere: push its midpoint away from the globe centre.
-  let arcPath = "";
-  let apex = { x: cx, y: cy };
-  if (hasArc && originPt && regionPt) {
-    const mx = (originPt.x + regionPt.x) / 2;
-    const my = (originPt.y + regionPt.y) / 2;
-    const dx = mx - cx;
-    const dy = my - cy;
-    const len = Math.hypot(dx, dy) || 1;
-    const lift = radius * 0.22;
-    apex = { x: mx + (dx / len) * lift, y: my + (dy / len) * lift };
-    arcPath = `M${originPt.x.toFixed(1)} ${originPt.y.toFixed(1)} Q${apex.x.toFixed(1)} ${apex.y.toFixed(1)} ${regionPt.x.toFixed(1)} ${regionPt.y.toFixed(1)}`;
-  }
+  const single = hasArc && originPt && regionPt ? buildArc(originPt, regionPt, cx, cy, radius * 0.22) : null;
+  const arcPath = single?.d ?? "";
+  const apex = single?.apex ?? { x: cx, y: cy };
+
+  // Multi-route arcs (leaderboard companion globe), projected once here.
+  const routeArcs = (routes ?? []).flatMap((r, i) => {
+    const o = project(r.origin, proj);
+    const g = project(r.region, proj);
+    if (!o.visible || !g.visible) return [];
+    return [{ i, d: buildArc(o, g, cx, cy, radius * 0.2).d, end: g, accent: r.accent ?? "#35e0a1" }];
+  });
 
   const badge = rttMs != null ? `${rttMs} ms` : null;
   const badgeW = badge ? badge.length * 8.4 + 22 : 0;
@@ -143,6 +165,33 @@ export function Globe({
           );
         })}
       </g>
+
+      {/* Multi-route arcs (leaderboard) */}
+      {routeArcs.length > 0 && (
+        <g>
+          {routeArcs.map((r) => (
+            <Fragment key={r.i}>
+              <path
+                className="globe-arc"
+                d={r.d}
+                fill="none"
+                stroke={r.accent}
+                strokeWidth={1.75}
+                strokeLinecap="round"
+                opacity={0.85}
+                style={{ filter: `drop-shadow(0 0 5px ${r.accent})` }}
+              />
+              <circle
+                cx={r.end.x}
+                cy={r.end.y}
+                r={3.5}
+                fill={r.accent}
+                style={{ filter: `drop-shadow(0 0 6px ${r.accent})` }}
+              />
+            </Fragment>
+          ))}
+        </g>
+      )}
 
       {/* Origin → region arc */}
       {hasArc && originPt && regionPt && (
