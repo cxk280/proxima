@@ -16,6 +16,8 @@ dist/
 build/
 .next/
 out/
+next-env.d.ts
+*.tsbuildinfo
 
 # OS / editor
 .DS_Store

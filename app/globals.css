@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+/*
+ * Proxima design tokens — mission-control dark theme.
+ * Exposed to Tailwind v4 as utilities (bg-base, text-ink, text-cyan, font-mono, …).
+ * Semantics: cyan = live/healthy/sub-40ms · amber = warn/>40ms · red = down/>200ms
+ * · green = latency-bar "under 40ms". JetBrains Mono is used for every latency number
+ * so digits don't jitter as they update.
+ */
+@theme {
+  --color-base: #0a0e1a;
+  --color-panel: #121826;
+  --color-elevated: #1a2233;
+  --color-inset: #0d1424;
+
+  --color-line: #263149;
+  --color-line-strong: #37455f;
+
+  --color-ink: #e7edf7;
+  --color-ink-secondary: #93a1ba;
+  --color-ink-muted: #5d6a82;
+
+  --color-cyan: #22d3ee;
+  --color-cyan-deep: #0e7c8c;
+  --color-amber: #fbbf24;
+  --color-red: #f04060;
+  --color-green: #35e0a1;
+
+  --color-navy-ink: #06121a;
+
+  --font-sans:
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, "SFMono-Regular", monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-base);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* --- Globe animations ------------------------------------------------------ */
+
+/* The origin→region arc draws itself in once a probe returns. */
+.globe-arc {
+  stroke-dasharray: 1200;
+  stroke-dashoffset: 1200;
+  animation: globe-arc-draw 1.3s cubic-bezier(0.22, 1, 0.36, 1) 0.25s forwards;
+}
+@keyframes globe-arc-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Expanding ring on the region that answered. */
+.globe-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: globe-pulse 2.6s ease-out infinite;
+}
+@keyframes globe-pulse {
+  0% {
+    transform: scale(0.4);
+    opacity: 0.65;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+/* RTT badge fades in after the arc lands. */
+.globe-badge {
+  opacity: 0;
+  animation: globe-fade 0.5s ease-out 1.1s forwards;
+}
+@keyframes globe-fade {
+  to {
+    opacity: 1;
+  }
+}
+
+/* The outer glow gently breathes so the sphere feels alive. */
+.globe-glow {
+  animation: globe-glow-breathe 6s ease-in-out infinite;
+}
+@keyframes globe-glow-breathe {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+/* Respect users who prefer reduced motion: freeze the globe + arc animations. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .globe-arc {
+    stroke-dashoffset: 0;
+  }
+  .globe-badge {
+    opacity: 1;
+  }
+}
