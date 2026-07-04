@@ -6,3 +6,5 @@ export type { Projection, ProjectedPoint } from "./geo";
 export { createSimulatedMesh, mesh, detectOrigin } from "./simulated-data";
 export { rttBand, rttColor, RTT_COLOR } from "./rtt";
 export type { RttBand } from "./rtt";
+export { meshStatus, HEALTH_HEX } from "./status";
+export type { RegionStatus } from "./status";
