@@ -21,6 +21,26 @@ export const SIMULATED_ORIGINS: Origin[] = [
 ];
 
 /**
+ * Origins for the "Sub-40ms Anywhere" leaderboard — a dozen cities spread across six
+ * continents, each far enough from its serving region to make the point but within
+ * regional reach, so every one honestly lands under 40ms on the nearest-region mesh.
+ */
+export const LEADERBOARD_ORIGINS: Origin[] = [
+  { label: "Jakarta", lat: -6.21, lon: 106.85 },
+  { label: "Manila", lat: 14.6, lon: 120.98 },
+  { label: "Hanoi", lat: 21.03, lon: 105.85 },
+  { label: "Karachi", lat: 24.86, lon: 67.0 },
+  { label: "Dubai", lat: 25.2, lon: 55.27 },
+  { label: "Cairo", lat: 30.04, lon: 31.24 },
+  { label: "Istanbul", lat: 41.01, lon: 28.98 },
+  { label: "Lisbon", lat: 38.72, lon: -9.14 },
+  { label: "Bogotá", lat: 4.71, lon: -74.07 },
+  { label: "Buenos Aires", lat: -34.6, lon: -58.38 },
+  { label: "Cape Town", lat: -33.92, lon: 18.42 },
+  { label: "Auckland", lat: -36.85, lon: 174.76 },
+];
+
+/**
  * Fallback origin used when geolocation is denied or unavailable (a coarse IP guess).
  * Deliberately not co-located with any region so the hero still draws a visible
  * origin→region route rather than a degenerate zero-length arc.
