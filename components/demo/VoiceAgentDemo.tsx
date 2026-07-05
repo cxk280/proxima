@@ -5,13 +5,14 @@ import { Globe } from "@/components/globe/Globe";
 import {
   DEFAULT_ORIGIN,
   detectOrigin,
-  mesh,
   rttBand,
   rttColor,
   SIMULATED_ORIGINS,
   US_EAST_REGION_ID,
   type Origin,
+  type ProbeResult,
 } from "@/lib/mesh";
+import { connect, type Session } from "@/lib/sdk";
 import { turnAt } from "@/lib/demo/conversation";
 import { OriginSelector } from "./OriginSelector";
 import { MicControl } from "./MicControl";
@@ -30,28 +31,45 @@ export function VoiceAgentDemo() {
   const [pinned, setPinned] = useState(false);
   const [micState, setMicState] = useState<MicState>("idle");
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
+  const [probe, setProbe] = useState<ProbeResult | null>(null);
 
   const turnIndex = useRef(0);
   const entryId = useRef(0);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const sessionRef = useRef<Session | null>(null);
 
   useEffect(() => {
     detectOrigin().then(setAutoOrigin);
     const t = timers.current;
-    return () => t.forEach(clearTimeout);
+    return () => {
+      t.forEach(clearTimeout);
+      sessionRef.current?.close();
+    };
   }, []);
 
   const labels = useMemo(() => ["Auto · my location", ...CHIP_CITIES], []);
 
   const origin: Origin =
     activeIndex === 0 ? (autoOrigin ?? DEFAULT_ORIGIN) : CHIP_ORIGINS[activeIndex - 1];
+  const pinId = pinned ? US_EAST_REGION_ID : undefined;
 
-  const probe = mesh.probe(origin, pinned ? { pinnedRegionId: US_EAST_REGION_ID } : {});
-  const accent = rttColor(probe.rttMs);
-  const band = rttBand(probe.rttMs);
+  // Open a live connect() session and re-home it whenever the origin or pin changes.
+  // Live RTT ticks stream in over SSE and update the readout + globe in real time.
+  useEffect(() => {
+    if (!sessionRef.current) {
+      const session = connect({ origin, pinnedRegionId: pinId });
+      session.on("tick", (p) => setProbe(p));
+      sessionRef.current = session;
+    } else {
+      sessionRef.current.update({ origin, pinnedRegionId: pinId });
+    }
+  }, [origin, pinId]);
+
+  const accent = probe ? rttColor(probe.rttMs) : "#22d3ee";
+  const band = probe ? rttBand(probe.rttMs) : "good";
 
   function talk() {
-    if (micState !== "idle") return;
+    if (micState !== "idle" || !probe) return;
     const turn = turnAt(turnIndex.current);
     const region = probe.region.city;
     const rttMs = probe.rttMs;
@@ -86,8 +104,8 @@ export function VoiceAgentDemo() {
         <div className="w-full max-w-[500px]">
           <Globe
             origin={origin}
-            region={probe.region}
-            rttMs={probe.rttMs}
+            region={probe?.region ?? null}
+            rttMs={probe?.rttMs ?? null}
             accent={accent}
             size={500}
             className="h-auto w-full overflow-visible"
@@ -106,7 +124,7 @@ export function VoiceAgentDemo() {
                 style={{ backgroundColor: accent, boxShadow: `0 0 6px ${accent}` }}
               />
               <span className="font-mono text-[11px] text-ink-secondary">
-                {probe.region.city} · {probe.rttMs} ms
+                {probe ? `${probe.region.city} · ${probe.rttMs} ms` : "connecting…"}
               </span>
             </span>
           </div>
@@ -114,15 +132,15 @@ export function VoiceAgentDemo() {
           <MicControl state={micState} onTalk={talk} />
 
           <RoundTripReadout
-            networkMs={probe.networkMs}
-            inferenceMs={probe.inferenceMs}
-            rttMs={probe.rttMs}
+            networkMs={probe?.networkMs ?? null}
+            inferenceMs={probe?.inferenceMs ?? null}
+            rttMs={probe?.rttMs ?? null}
             accent={accent}
           />
 
           <ContrastToggle pinned={pinned} onToggle={() => setPinned((p) => !p)} />
 
-          {pinned && band === "bad" && (
+          {pinned && band === "bad" && probe && (
             <p
               className="rounded-lg border px-3.5 py-2.5 text-[13px]"
               style={{ borderColor: "rgba(240,64,96,0.4)", backgroundColor: "#1a0c11", color: "#f7a8b6" }}

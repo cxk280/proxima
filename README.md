@@ -27,10 +27,12 @@ for the source-of-truth description of every view.
 
 ## Development
 
-The web app is a **Next.js (App Router) + TypeScript + Tailwind CSS v4** project. The live
-latency/globe data is currently a **deterministic simulated provider** (`lib/mesh`) behind a
-`MeshProvider` interface — no GPU spend, demo-ready — designed so a real probe backend +
-`connect()` SDK can drop in later without touching the UI.
+The web app is a **Next.js (App Router) + TypeScript + Tailwind CSS v4** project. The views
+consume latency data from a **real probe backend** (route handlers under `app/api/`) via the
+**`@proxima/connect` SDK** (`lib/sdk`) — origin is geo-located from the request IP and the
+wire RTT to the edge is really measured, while per-region GPU latency is modeled server-side
+(great-circle distance → fibre propagation) until real Vultr regions are wired in. See
+[Live backend + SDK](#live-backend--sdk) below.
 
 ```bash
 npm install
@@ -51,8 +53,36 @@ npm run format       # prettier --write .
 
 | Path | What |
 |---|---|
-| `app/` | App Router pages — Home (`page.tsx`) plus stubbed `demo` / `leaderboard` / `mesh` / `docs` routes |
+| `app/` | App Router pages — Home, Demo, Leaderboard, Mesh Status, Docs, and the 404 / error fallbacks |
+| `app/api/` | The probe backend — `probe`, `probe/batch`, `regions`, `mesh`, `health`, and the `session` SSE stream |
 | `components/globe/` | The reusable animated wireframe `Globe` (SVG, SSR-safe) |
 | `components/shell/` | Global chrome — `TopBar`, `Footer`, `ConnectionBanner`, `Shell` |
-| `components/ui/` | Primitives — `Button`, `StatTile`, `MeshPill` |
-| `lib/mesh/` | Region catalog, geo/projection math, and the simulated probe provider |
+| `components/{home,demo,leaderboard,mesh,docs}/` | The five views |
+| `lib/sdk/` | The `@proxima/connect` SDK — `connect()` live session + `probeOnce`/`probeBatch`/`fetchRegions`/`fetchMeshStatus` |
+| `lib/mesh/` | Region catalog, geo/projection math, the latency model, and the `server-probe` real-region seam |
+
+### Live backend + SDK
+
+The UI never computes latency itself — it calls the backend through the SDK:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/probe` | Home a session onto the nearest region (origin from body or geo-IP) |
+| `POST /api/probe/batch` | Probe many origins at once (the leaderboard sweep) |
+| `GET /api/regions` | The region catalog |
+| `GET /api/mesh` | Operational status snapshot (Mesh Status) |
+| `GET /api/health` | Liveness for the connection banner |
+| `GET /api/session` | **SSE** live RTT stream a `connect()` session subscribes to |
+
+**What's real vs modeled:** the origin is geo-located from real edge headers (`x-vercel-ip-*` /
+`cf-ip*`; falls back to a coarse default on localhost), and the SDK measures the real wire RTT
+to the edge. Per-region GPU latency is a **model** (great-circle distance → fibre propagation)
+so the numbers are honest estimates, not fabricated.
+
+**Plugging in real Vultr regions:** set `PROXIMA_REGION_ENDPOINTS` to a JSON map of
+`regionId → probe URL`. When present, `lib/mesh/server-probe.ts` measures the *real*
+round-trip to the nearest region's endpoint instead of modeling it — no UI changes needed.
+
+```bash
+PROXIMA_REGION_ENDPOINTS='{"fra":"https://fra.probe.example/health","nrt":"https://nrt.probe.example/health"}' npm run dev
+```
