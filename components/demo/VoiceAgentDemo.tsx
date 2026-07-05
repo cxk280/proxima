@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Globe } from "@/components/globe/Globe";
+import { LatencyValue } from "@/components/ui/LatencyValue";
 import {
   DEFAULT_ORIGIN,
   detectOrigin,
@@ -11,14 +12,18 @@ import {
   rttColor,
   SIMULATED_ORIGINS,
   US_EAST_REGION_ID,
+  type Latency,
   type Origin,
   type ProbeResult,
+  type Region,
 } from "@/lib/mesh";
 import { connect, type Session } from "@/lib/sdk";
+import { useMeasuredHoming } from "@/lib/hooks/useMeasuredHoming";
 import { turnAt } from "@/lib/demo/conversation";
 import { OriginSelector } from "./OriginSelector";
 import { MicControl } from "./MicControl";
 import { RoundTripReadout } from "./RoundTripReadout";
+import { RegionPicker } from "./RegionPicker";
 import { ContrastToggle } from "./ContrastToggle";
 import { Transcript } from "./Transcript";
 import type { MicState, TranscriptEntry } from "./types";
@@ -30,10 +35,11 @@ const CHIP_ORIGINS = CHIP_CITIES.map((c) => SIMULATED_ORIGINS.find((o) => o.labe
 export function VoiceAgentDemo() {
   const [autoOrigin, setAutoOrigin] = useState<Origin | null>(null);
   const [activeIndex, setActiveIndex] = useState(0); // 0 = Auto
-  const [pinned, setPinned] = useState(false);
+  const [pinned, setPinned] = useState(false); // US-East contrast pin
+  const [chosenRegionId, setChosenRegionId] = useState<string | null>(null); // viewer-picked region
   const [micState, setMicState] = useState<MicState>("idle");
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
-  const [probe, setProbe] = useState<ProbeResult | null>(null);
+  const [probe, setProbe] = useState<ProbeResult | null>(null); // modeled baseline (inference, fallback)
   const [failover, setFailover] = useState<{ from: string; to: string; deltaMs: number } | null>(null);
 
   const turnIndex = useRef(0);
@@ -54,10 +60,11 @@ export function VoiceAgentDemo() {
 
   const origin: Origin =
     activeIndex === 0 ? (autoOrigin ?? DEFAULT_ORIGIN) : CHIP_ORIGINS[activeIndex - 1];
-  const pinId = pinned ? US_EAST_REGION_ID : undefined;
+  const isAuto = activeIndex === 0;
+  const pinId = pinned ? US_EAST_REGION_ID : (chosenRegionId ?? undefined);
 
-  // Open a live connect() session and re-home it whenever the origin or pin changes.
-  // Live RTT ticks stream in over SSE and update the readout + globe in real time.
+  // The modeled baseline (inference leg + region + a live heartbeat) still streams over the
+  // connect() SSE session — the SDK showcase — and is the fallback when nothing is measured.
   useEffect(() => {
     if (!sessionRef.current) {
       const session = connect({ origin, pinnedRegionId: pinId });
@@ -68,14 +75,30 @@ export function VoiceAgentDemo() {
     }
   }, [origin, pinId]);
 
-  const accent = probe ? rttColor(probe.rttMs) : "#22d3ee";
-  const band = probe ? rttBand(probe.rttMs) : "good";
+  // The REAL network leg: measured in THIS browser. Only "Auto · my location" can be truly
+  // measured (we can't measure from a city the viewer isn't in) — other chips stay modeled.
+  const { homing } = useMeasuredHoming(origin, { pinnedRegionId: pinId, enabled: isAuto });
+
+  // Resolve display values, provenance-tagged. Measured region/network win when present.
+  const region: Region | null = homing?.region ?? probe?.region ?? null;
+  const network: Latency | null = homing
+    ? homing.network
+    : probe
+      ? { ms: probe.networkMs, real: false }
+      : null;
+  const inference: Latency | null = probe ? { ms: probe.inferenceMs, real: false } : null;
+  // Total includes the modeled inference leg, so it is estimated even when network is real.
+  const total: Latency | null =
+    network && inference ? { ms: network.ms + inference.ms, real: false } : null;
+
+  const accent = network ? rttColor(network.ms) : "#22d3ee";
+  const networkBad = network != null && rttBand(network.ms) === "bad";
 
   async function talk() {
-    if (micState === "listening" || micState === "thinking" || micState === "speaking" || !probe) return;
+    if (micState === "listening" || micState === "thinking" || micState === "speaking" || !network || !region) return;
 
-    // Real microphone-permission gate: prompt for mic access; a denial surfaces the
-    // mic-blocked state. We don't record — the track is released immediately.
+    // Real microphone-permission gate (micro-states): prompt for mic access; a denial
+    // surfaces the mic-blocked state. We don't record — the track is released immediately.
     if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -87,8 +110,8 @@ export function VoiceAgentDemo() {
     }
 
     const turn = turnAt(turnIndex.current);
-    const region = probe.region.city;
-    const rttMs = probe.rttMs;
+    const city = region.city;
+    const replyLatency = network;
     const replyAccent = accent;
 
     setMicState("listening");
@@ -99,7 +122,7 @@ export function VoiceAgentDemo() {
       }, 1200),
       setTimeout(() => {
         setMicState("speaking");
-        addEntry({ role: "agent", text: turn.agent, region, rttMs, accent: replyAccent });
+        addEntry({ role: "agent", text: turn.agent, region: city, rttMs: replyLatency.ms, accent: replyAccent });
       }, 2000),
       setTimeout(() => {
         setMicState("idle");
@@ -111,8 +134,8 @@ export function VoiceAgentDemo() {
   // Simulate the nearest region hitting capacity: the session fails over to the
   // next-nearest healthy region, with a banner + a system note in the transcript.
   function simulateOutage() {
-    if (!probe) return;
-    const current = probe.region;
+    if (!region) return;
+    const current = region;
     const alt = REGIONS.filter((r) => r.id !== current.id && r.health !== "down").reduce((best, r) =>
       haversineKm(origin, r) < haversineKm(origin, best) ? r : best,
     );
@@ -131,11 +154,23 @@ export function VoiceAgentDemo() {
       {/* Stage: origin chips + globe */}
       <div className="flex flex-1 flex-col items-center gap-5">
         <OriginSelector labels={labels} activeIndex={activeIndex} onSelect={setActiveIndex} />
+        {/* Provenance legend — Auto is the viewer's real measurement; cities are modeled. */}
+        <div className="flex items-center gap-5 text-[11px] font-medium">
+          <span className="flex items-center gap-1.5 text-ink-secondary">
+            <span className="h-[7px] w-[7px] rounded-full bg-cyan" style={{ boxShadow: "0 0 6px #22d3ee" }} />
+            REAL — your live latency
+          </span>
+          <span className="flex items-center gap-1.5 text-ink-muted">
+            <span className="h-[7px] w-[7px] rounded-full bg-[#5d6a82]" />
+            est — modeled for other cities
+          </span>
+        </div>
         <div className="w-full max-w-[500px]">
           <Globe
             origin={origin}
-            region={probe?.region ?? null}
-            rttMs={probe?.rttMs ?? null}
+            region={region}
+            rttMs={network?.ms ?? null}
+            real={network?.real ?? true}
             accent={accent}
             size={500}
             className="h-auto w-full overflow-visible"
@@ -154,28 +189,31 @@ export function VoiceAgentDemo() {
                 style={{ backgroundColor: accent, boxShadow: `0 0 6px ${accent}` }}
               />
               <span className="font-mono text-[11px] text-ink-secondary">
-                {probe ? `${probe.region.city} · ${probe.rttMs} ms` : "connecting…"}
+                {region && network ? (
+                  <>
+                    {region.city} · <LatencyValue value={network} className="text-[11px]" />
+                  </>
+                ) : (
+                  "connecting…"
+                )}
               </span>
             </span>
           </div>
 
           <MicControl state={micState} onTalk={talk} />
 
-          <RoundTripReadout
-            networkMs={probe?.networkMs ?? null}
-            inferenceMs={probe?.inferenceMs ?? null}
-            rttMs={probe?.rttMs ?? null}
-            accent={accent}
-          />
+          <RoundTripReadout network={network} inference={inference} total={total} />
+
+          <RegionPicker value={chosenRegionId} onChange={setChosenRegionId} disabled={pinned} />
 
           <ContrastToggle pinned={pinned} onToggle={() => setPinned((p) => !p)} />
 
-          {pinned && band === "bad" && probe && (
+          {pinned && networkBad && network && (
             <p
               className="rounded-lg border px-3.5 py-2.5 text-[13px]"
               style={{ borderColor: "rgba(240,64,96,0.4)", backgroundColor: "#1a0c11", color: "#f7a8b6" }}
             >
-              This is what single-region GPU hosting feels like — {probe.rttMs}ms from {origin.label}.
+              This is what single-region GPU hosting feels like — {network.ms}ms from {origin.label}.
             </p>
           )}
 

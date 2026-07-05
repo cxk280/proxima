@@ -49,6 +49,28 @@ export interface ProbeOptions {
 }
 
 /**
+ * A latency value carrying its own provenance. `real` is measured live (the viewer's
+ * browser probing a real region responder, or a real server measurement); otherwise it
+ * is the physics model's estimate. Carrying provenance on the value — rather than as a
+ * sibling boolean — is what makes "an EST number never renders as REAL" a type-level
+ * guarantee: a render helper takes a `Latency`, so it must resolve which style to use.
+ */
+export interface Latency {
+  ms: number;
+  real: boolean;
+}
+
+/**
+ * The result of the browser homing the viewer onto a region by *measuring* — the region
+ * whose responder answered fastest, plus that real network round-trip. `null` network
+ * `real` never occurs here (that path falls back to the modeled estimate instead).
+ */
+export interface ClientHoming {
+  region: Region;
+  network: Latency;
+}
+
+/**
  * The contract every mesh data source implements. Swap the simulated provider for a
  * real one (probe backend + connect() SDK) without touching the UI.
  */

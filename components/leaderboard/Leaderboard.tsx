@@ -2,8 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Globe, type GlobeRoute } from "@/components/globe/Globe";
-import { LEADERBOARD_ORIGINS, US_EAST_REGION_ID, type ProbeResult } from "@/lib/mesh";
-import { probeBatch } from "@/lib/sdk";
+import { LatencyValue } from "@/components/ui/LatencyValue";
+import {
+  detectOrigin,
+  LEADERBOARD_ORIGINS,
+  US_EAST_REGION_ID,
+  type Latency,
+  type Origin,
+  type ProbeResult,
+  type Region,
+} from "@/lib/mesh";
+import { probeBatch, probeOnce } from "@/lib/sdk";
+import { useMeasuredHoming } from "@/lib/hooks/useMeasuredHoming";
 
 const REVEAL_STEP_MS = 170;
 
@@ -19,7 +29,32 @@ export function Leaderboard() {
   const [revealed, setRevealed] = useState(0);
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<ProbeResult[]>([]);
+  const [youOrigin, setYouOrigin] = useState<Origin | null>(null);
+  const [youModeled, setYouModeled] = useState<ProbeResult | null>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // The viewer's own city — the one REAL, browser-measured row, pinned at the top.
+  useEffect(() => {
+    detectOrigin().then(setYouOrigin);
+  }, []);
+  const { homing: youHoming, resolved: youResolved } = useMeasuredHoming(youOrigin);
+  useEffect(() => {
+    if (!youOrigin || !youResolved || youHoming) return;
+    let live = true;
+    probeOnce(youOrigin)
+      .then((p) => live && setYouModeled(p))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [youOrigin, youResolved, youHoming]);
+
+  const youRegion: Region | null = youHoming?.region ?? youModeled?.region ?? null;
+  const youLatency: Latency | null = youHoming
+    ? youHoming.network
+    : youModeled
+      ? { ms: youModeled.rttMs, real: false }
+      : null;
 
   // Fetch a fresh sweep from the probe backend on mount, when the contrast toggle flips,
   // or on "Run probes", then reveal the rows one at a time.
@@ -72,7 +107,7 @@ export function Leaderboard() {
         <div>
           <h1 className="text-[32px] font-bold tracking-[-0.02em] text-ink">Sub-40ms, Anywhere</h1>
           <p className="mt-1.5 text-[15px] text-ink-secondary">
-            Live probes fired from a dozen global cities — every one lands on the nearest region.
+            Your own city is measured live — every other city is estimated on the same physics model.
           </p>
         </div>
         <div className="flex items-center gap-3.5">
@@ -133,6 +168,7 @@ export function Leaderboard() {
             <span className="w-8 shrink-0" />
           </div>
 
+          <YouRow region={youRegion} latency={youLatency} />
           {LEADERBOARD_ORIGINS.map((origin, i) => (
             <ProbeRow key={origin.label} origin={origin.label} result={i < revealed ? results[i] : null} />
           ))}
@@ -146,7 +182,8 @@ export function Leaderboard() {
               style={{ backgroundColor: pinned ? "#f04060" : "#35e0a1" }}
             />
             <span className="font-mono text-xs text-ink">
-              {revealed} {revealed === 1 ? "arc" : "arcs"} live · {pinned ? "single-region" : "all sub-40ms"}
+              {youLatency?.real ? "1 real + " : ""}
+              {revealed} est · {pinned ? "single-region" : "all sub-40ms"}
             </span>
           </div>
           <Globe routes={routes} rttMs={null} size={460} className="h-auto w-full max-w-[460px] overflow-visible" />
@@ -178,6 +215,46 @@ function ProbeRow({ origin, result }: { origin: string; result: ProbeResult | nu
       </span>
       <span className="w-8 shrink-0 text-right text-sm" style={{ color }}>
         {result ? (result.rttMs < 40 ? "✓" : "!") : ""}
+      </span>
+    </div>
+  );
+}
+
+/** The viewer's own row — REAL when browser-measured (cyan + "REAL"), else the modeled
+ *  estimate (muted + "est"), always pinned at the top and visually set apart. */
+function YouRow({ region, latency }: { region: Region | null; latency: Latency | null }) {
+  const pct = latency ? Math.min(100, (latency.ms / 40) * 100) : 0;
+  const barColor = latency?.real ? "#22d3ee" : latency ? lbColor(latency.ms) : "#5d6a82";
+  return (
+    <div
+      className="relative flex items-center gap-4 border-b border-line/60 px-5 py-3.5"
+      style={{ backgroundColor: "rgba(34,211,238,0.06)" }}
+    >
+      <span className="absolute inset-y-0 left-0 w-[3px] bg-cyan" />
+      <span className="w-[150px] shrink-0 text-sm font-medium text-ink">You · your city</span>
+      <span className="w-[150px] shrink-0 text-[13px] text-ink-secondary">
+        {region ? region.city : <Spinner />}
+      </span>
+      <span className="w-14 shrink-0 text-right">
+        {latency ? (
+          <LatencyValue value={latency} className="text-[13px]" />
+        ) : (
+          <span className="font-mono text-[13px] text-ink-muted">—</span>
+        )}
+      </span>
+      <span className="flex-1">
+        <span className="relative block h-1.5 w-full max-w-[180px] overflow-hidden rounded-full bg-inset">
+          <span
+            className="absolute inset-y-0 left-0 rounded-full transition-[width] duration-500"
+            style={{ width: `${pct}%`, backgroundColor: barColor, boxShadow: latency ? `0 0 6px ${barColor}` : undefined }}
+          />
+        </span>
+      </span>
+      <span
+        className="w-8 shrink-0 text-right font-mono text-[10px] font-semibold tracking-tight"
+        style={{ color: latency?.real ? "#22d3ee" : "#93a1ba" }}
+      >
+        {latency ? (latency.real ? "REAL" : "est") : ""}
       </span>
     </div>
   );

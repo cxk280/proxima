@@ -26,3 +26,6 @@ next-env.d.ts
 
 # Logs
 *.log
+
+# Local edge-case working record (not committed)
+docs/EDGE_CASES.md
