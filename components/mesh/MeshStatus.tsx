@@ -13,6 +13,7 @@ const HEALTH_LABEL: Record<Health, string> = {
 
 export function MeshStatus() {
   const [statuses, setStatuses] = useState<RegionStatus[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Load the mesh status snapshot from the backend, defaulting the selection to the
@@ -25,13 +26,14 @@ export function MeshStatus() {
         setStatuses(s);
         setSelectedId((s.find((x) => x.region.health !== "healthy") ?? s[0])?.region.id ?? null);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => live && setLoaded(true));
     return () => {
       live = false;
     };
   }, []);
 
-  if (statuses.length === 0) {
+  if (!loaded) {
     return (
       <section className="flex flex-1 items-center justify-center px-6 py-16">
         <p className="font-mono text-sm text-ink-muted">Loading mesh status…</p>
@@ -39,7 +41,17 @@ export function MeshStatus() {
     );
   }
 
+  if (statuses.length === 0) {
+    return (
+      <section className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-16 text-center">
+        <p className="font-mono text-sm text-ink">No provisioned regions.</p>
+        <p className="text-[13px] text-ink-muted">Provision a region to begin — see the docs.</p>
+      </section>
+    );
+  }
+
   const selected = statuses.find((s) => s.region.id === selectedId) ?? statuses[0];
+  const isLive = statuses.length > 0 && statuses.every((s) => s.real);
 
   const degraded = statuses.filter((s) => s.region.health === "degraded").length;
   const down = statuses.filter((s) => s.region.health === "down").length;
@@ -56,7 +68,9 @@ export function MeshStatus() {
         <div>
           <h1 className="text-[32px] font-bold tracking-[-0.02em] text-ink">Mesh Status</h1>
           <p className="mt-1.5 text-[15px] text-ink-secondary">
-            Live health of every provisioned region in the mesh.
+            {isLive
+              ? "Live health of every provisioned region — measured by real probes, not a status page."
+              : "Health of every provisioned region in the mesh."}
           </p>
         </div>
         <span className="inline-flex items-center gap-2 self-start rounded-full border border-line bg-panel px-3.5 py-2.5">
@@ -79,7 +93,7 @@ export function MeshStatus() {
             <span className="w-[120px] shrink-0">HEALTH</span>
             <span className="w-[90px] shrink-0">CAPACITY</span>
             <span className="w-[110px] shrink-0">LOAD BALANCER</span>
-            <span className="flex-1">RECENT RTT</span>
+            <span className="flex-1">RECENT RTT{isLive ? " · LIVE" : ""}</span>
           </div>
           {statuses.map((s) => (
             <StatusRow
@@ -201,8 +215,12 @@ function DetailCard({ status }: { status: RegionStatus }) {
       </div>
 
       <div className="flex gap-2.5">
-        <Stat label="capacity" value={status.capacityPct == null ? "—" : `${status.capacityPct}%`} color={color} />
-        <Stat label="current RTT" value={status.currentRttMs == null ? "—" : `${status.currentRttMs} ms`} color={color} />
+        <Stat label="capacity · est" value={status.capacityPct == null ? "—" : `${status.capacityPct}%`} color={color} />
+        <Stat
+          label={status.real ? "current RTT · live" : "current RTT"}
+          value={status.currentRttMs == null ? "—" : `${status.currentRttMs} ms`}
+          color={color}
+        />
         <Stat label="nodes" value={`${status.lbNodes} / 3`} />
       </div>
 

@@ -1,10 +1,13 @@
-import { meshStatus } from "@/lib/mesh";
+import { meshHealth } from "@/lib/mesh/server-health";
 
 export const dynamic = "force-dynamic";
 
-/** Lightweight liveness probe for the ConnectionBanner. */
-export function GET() {
-  const statuses = meshStatus();
-  const degraded = statuses.filter((s) => s.region.health !== "healthy").length;
-  return Response.json({ ok: true, regions: statuses.length, degraded });
+/** Liveness + real health summary — feeds the ConnectionBanner and the top-bar MeshPill. */
+export async function GET() {
+  const s = await meshHealth();
+  const healthy = s.filter((x) => x.region.health === "healthy").length;
+  const degraded = s.filter((x) => x.region.health === "degraded").length;
+  const down = s.filter((x) => x.region.health === "down").length;
+  const real = s.length > 0 && s.every((x) => x.real);
+  return Response.json({ ok: true, regions: s.length, healthy, degraded, down, real });
 }
