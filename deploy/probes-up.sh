@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Stand up real-RTT probe responders in one or more Vultr regions.
-#   ./probes-up.sh fra nrt gru syd ewr sjc
-# Picks the cheapest regular-CPU plan available in each region, boots a tiny
-# HEAD-200 responder via cloud-init, waits for IPs, and prints a ready-to-paste
-# PROXIMA_REGION_ENDPOINTS JSON. These are BILLABLE (~$0.004–0.005/hr each) —
-# run ./probes-down.sh to destroy them all when the demo is over.
+# Stand up real-RTT probe responders (HTTPS, browser-measurable) in one or more
+# Vultr regions.
+#   ./probes-up.sh ewr sjc lhr nrt syd bom
+# Picks the cheapest >=1GB plan available in each region, boots a Caddy responder
+# (auto-TLS on <ip>.sslip.io, `respond 200` + CORS) via cloud-init, waits for IPs,
+# and prints a ready-to-paste PROXIMA_REGION_ENDPOINTS JSON. BILLABLE (~$5/mo =
+# ~$0.007/hr each) — run ./probes-down.sh to destroy them all after the demo.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 load_env
@@ -21,29 +22,27 @@ os_id="$(printf '%s' "$os_json" | jq -r '.os[] | select(.name|test("Ubuntu 24.04
 valid_vultr="$(printf '%s' "$regions_json" | jq -r '.regions[].id')"
 valid_mesh="$(mesh_region_ids)"
 
-# Build cloud-init once (responder.py indented into a write_files block).
-py_indented="$(sed 's/^/      /' "$DEPLOY_DIR/responder/responder.py")"
+# Responders serve HTTPS via Caddy (auto-TLS on a <ip>.sslip.io hostname) so a
+# BROWSER can measure them without tripping the mixed-content rule. Each box just
+# `respond 200` with CORS open — no GPU, no app. It self-configures from its own
+# public IP via the Vultr metadata service, so this script stays API-only (no SSH
+# in the hot path); an SSH key is still injected for manual fixups.
+PUBKEY_FILE="$(default_pubkey)"
+[ -f "$PUBKEY_FILE" ] || die "no SSH pubkey at $PUBKEY_FILE (set PROXIMA_SSH_PUBKEY in deploy/.env)"
+PUBKEY="$(cat "$PUBKEY_FILE")"
 cloud_init="$(cat <<EOF
 #cloud-config
-write_files:
-  - path: /opt/responder.py
-    permissions: '0755'
-    content: |
-$py_indented
-  - path: /etc/systemd/system/responder.service
-    content: |
-      [Unit]
-      Description=Proxima probe responder
-      After=network.target
-      [Service]
-      ExecStart=/usr/bin/python3 /opt/responder.py
-      Restart=always
-      [Install]
-      WantedBy=multi-user.target
+ssh_authorized_keys:
+  - $PUBKEY
+package_update: true
 runcmd:
+  - apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
+  - curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  - curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt | tee /etc/apt/sources.list.d/caddy-stable.list
+  - apt-get update && apt-get install -y caddy
   - ufw allow 80/tcp
-  - systemctl daemon-reload
-  - systemctl enable --now responder
+  - ufw allow 443/tcp
+  - bash -c 'IP=\$(curl -s --max-time 5 http://169.254.169.254/v1/interfaces/0/ipv4/address); [ -n "\$IP" ] || IP=\$(hostname -I | awk "{print \\\$1}"); HOST=\$(echo \$IP | tr . -).sslip.io; printf "%s {\n  header Access-Control-Allow-Origin *\n  header Cache-Control no-store\n  respond 200\n}\n" "\$HOST" > /etc/caddy/Caddyfile; systemctl enable caddy; systemctl restart caddy'
 EOF
 )"
 user_data="$(printf '%s' "$cloud_init" | base64 | tr -d '\n')"
@@ -81,16 +80,16 @@ for _ in $(seq 1 40); do
   sleep 6
 done
 
-# Emit PROXIMA_REGION_ENDPOINTS JSON (mesh-id -> http://ip). Responder boots a
-# few seconds after the IP appears; the app tolerates a not-yet-up endpoint by
-# falling back to modeled RTT until it answers.
+# Emit PROXIMA_REGION_ENDPOINTS JSON (mesh-id -> https://<ip>.sslip.io). Caddy
+# needs ~30-60s after boot to fetch a cert; the app (and the browser) tolerate a
+# not-yet-up endpoint by falling back to modeled RTT until it answers.
 echo >&2
 echo "PROXIMA_REGION_ENDPOINTS (paste into the app host env):" >&2
 json="{"; first=1
 for i in "${!ids[@]}"; do
-  code="${regions[$i]}"; ip="${ips[$i]}"
+  code="${regions[$i]}"; host="$(echo "${ips[$i]}" | tr . -).sslip.io"
   [ "$first" -eq 1 ] || json="$json,"; first=0
-  json="$json\"$code\":\"http://$ip\""
+  json="$json\"$code\":\"https://$host\""
 done
 json="$json}"
 echo "$json"
