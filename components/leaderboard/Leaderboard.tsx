@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Globe, type GlobeRoute } from "@/components/globe/Globe";
-import { LEADERBOARD_ORIGINS, mesh, US_EAST_REGION_ID, type ProbeResult } from "@/lib/mesh";
+import { LEADERBOARD_ORIGINS, US_EAST_REGION_ID, type ProbeResult } from "@/lib/mesh";
+import { probeBatch } from "@/lib/sdk";
 
 const REVEAL_STEP_MS = 170;
 
@@ -17,31 +18,40 @@ export function Leaderboard() {
   const [runNonce, setRunNonce] = useState(0);
   const [revealed, setRevealed] = useState(0);
   const [running, setRunning] = useState(false);
+  const [results, setResults] = useState<ProbeResult[]>([]);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  // Re-run the probe sweep on mount, when the contrast toggle flips, or on "Run probes".
+  // Fetch a fresh sweep from the probe backend on mount, when the contrast toggle flips,
+  // or on "Run probes", then reveal the rows one at a time.
   useEffect(() => {
+    let live = true;
     timers.current.forEach(clearTimeout);
     timers.current = [];
     setRevealed(0);
     setRunning(true);
-    LEADERBOARD_ORIGINS.forEach((_, i) => {
-      const t = setTimeout(
-        () => {
-          setRevealed(i + 1);
-          if (i === LEADERBOARD_ORIGINS.length - 1) setRunning(false);
-        },
-        300 + i * REVEAL_STEP_MS,
-      );
-      timers.current.push(t);
-    });
-    const t = timers.current;
-    return () => t.forEach(clearTimeout);
+    probeBatch(LEADERBOARD_ORIGINS, pinned ? US_EAST_REGION_ID : undefined)
+      .then((res) => {
+        if (!live) return;
+        setResults(res);
+        LEADERBOARD_ORIGINS.forEach((_, i) => {
+          const t = setTimeout(
+            () => {
+              setRevealed(i + 1);
+              if (i === LEADERBOARD_ORIGINS.length - 1) setRunning(false);
+            },
+            250 + i * REVEAL_STEP_MS,
+          );
+          timers.current.push(t);
+        });
+      })
+      .catch(() => {
+        if (live) setRunning(false);
+      });
+    return () => {
+      live = false;
+      timers.current.forEach(clearTimeout);
+    };
   }, [pinned, runNonce]);
-
-  const results: ProbeResult[] = LEADERBOARD_ORIGINS.map((o) =>
-    mesh.probe(o, pinned ? { pinnedRegionId: US_EAST_REGION_ID } : {}),
-  );
   const done = results.slice(0, revealed);
   const under40 = done.filter((r) => r.rttMs < 40).length;
   const maxMs = done.length ? Math.max(...done.map((r) => r.rttMs)) : 0;

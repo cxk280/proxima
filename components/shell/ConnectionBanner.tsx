@@ -3,21 +3,39 @@
 import { useEffect, useState } from "react";
 
 /**
- * Thin amber banner shown when the live probe stream drops. Today it tracks the
- * browser's online/offline state as a stand-in for the (future) probe-stream health;
- * when the stream reconnects it disappears and latency numbers resume.
+ * Thin amber banner shown when the probe backend is unreachable. Polls `/api/health`
+ * every few seconds (and reacts to the browser going offline); when the backend answers
+ * again it disappears and latency numbers resume.
  */
 export function ConnectionBanner() {
   const [offline, setOffline] = useState(false);
 
   useEffect(() => {
-    const sync = () => setOffline(!navigator.onLine);
-    sync();
-    window.addEventListener("online", sync);
-    window.addEventListener("offline", sync);
+    let live = true;
+
+    async function check() {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        if (live) setOffline(true);
+        return;
+      }
+      try {
+        const res = await fetch("/api/health", { cache: "no-store" });
+        if (live) setOffline(!res.ok);
+      } catch {
+        if (live) setOffline(true);
+      }
+    }
+
+    check();
+    const timer = setInterval(check, 5000);
+    const onOffline = () => setOffline(true);
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("online", check);
     return () => {
-      window.removeEventListener("online", sync);
-      window.removeEventListener("offline", sync);
+      live = false;
+      clearInterval(timer);
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", check);
     };
   }, []);
 

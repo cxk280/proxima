@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Globe } from "@/components/globe/Globe";
-import { HEALTH_HEX, meshStatus, type Health, type RegionStatus } from "@/lib/mesh";
+import { HEALTH_HEX, type Health, type RegionStatus } from "@/lib/mesh";
+import { fetchMeshStatus } from "@/lib/sdk";
 
 const HEALTH_LABEL: Record<Health, string> = {
   healthy: "Healthy",
@@ -11,11 +12,33 @@ const HEALTH_LABEL: Record<Health, string> = {
 };
 
 export function MeshStatus() {
-  const statuses = useMemo(() => meshStatus(), []);
-  // Default to the first non-healthy region so the detail panel opens on something live.
-  const [selectedId, setSelectedId] = useState(
-    () => (statuses.find((s) => s.region.health !== "healthy") ?? statuses[0]).region.id,
-  );
+  const [statuses, setStatuses] = useState<RegionStatus[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Load the mesh status snapshot from the backend, defaulting the selection to the
+  // first non-healthy region so the detail panel opens on something live.
+  useEffect(() => {
+    let live = true;
+    fetchMeshStatus()
+      .then((s) => {
+        if (!live) return;
+        setStatuses(s);
+        setSelectedId((s.find((x) => x.region.health !== "healthy") ?? s[0])?.region.id ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (statuses.length === 0) {
+    return (
+      <section className="flex flex-1 items-center justify-center px-6 py-16">
+        <p className="font-mono text-sm text-ink-muted">Loading mesh status…</p>
+      </section>
+    );
+  }
+
   const selected = statuses.find((s) => s.region.id === selectedId) ?? statuses[0];
 
   const degraded = statuses.filter((s) => s.region.health === "degraded").length;

@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { Globe } from "@/components/globe/Globe";
 import { Button } from "@/components/ui/Button";
 import { StatTile } from "@/components/ui/StatTile";
-import { detectOrigin, mesh, type Origin, type ProbeResult } from "@/lib/mesh";
+import { detectOrigin, type Origin, type ProbeResult } from "@/lib/mesh";
+import { probeOnce } from "@/lib/sdk";
 
 const TRUST = [
   { value: "33", label: "GPU regions" },
@@ -22,10 +23,11 @@ export function HomeHero() {
 
   useEffect(() => {
     let live = true;
-    detectOrigin().then((o) => {
+    detectOrigin().then(async (o) => {
       if (!live) return;
       setOrigin(o);
-      setProbe(mesh.probe(o));
+      const p = await probeOnce(o).catch(() => null);
+      if (live) setProbe(p);
     });
     return () => {
       live = false;
