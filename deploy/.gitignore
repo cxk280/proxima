@@ -1,0 +1,5 @@
+
+# Local deploy artifacts (never commit)
+.env
+.known_hosts
+.bundle.tgz
