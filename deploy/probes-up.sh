@@ -42,7 +42,7 @@ runcmd:
   - apt-get update && apt-get install -y caddy
   - ufw allow 80/tcp
   - ufw allow 443/tcp
-  - bash -c 'IP=\$(curl -s --max-time 5 http://169.254.169.254/v1/interfaces/0/ipv4/address); [ -n "\$IP" ] || IP=\$(hostname -I | awk "{print \\\$1}"); HOST=\$(echo \$IP | tr . -).sslip.io; printf "%s {\n  header Access-Control-Allow-Origin *\n  header Cache-Control no-store\n  respond 200\n}\n" "\$HOST" > /etc/caddy/Caddyfile; systemctl enable caddy; systemctl restart caddy'
+  - bash -c 'IP=\$(curl -s --max-time 5 http://169.254.169.254/v1/interfaces/0/ipv4/address); [ -n "\$IP" ] || IP=\$(hostname -I | awk "{print \\\$1}"); HOST=\$(echo \$IP | tr . -).sslip.io; printf "%s {\n  header Access-Control-Allow-Origin *\n  header Timing-Allow-Origin *\n  header Cache-Control no-store\n  respond 200\n}\n" "\$HOST" > /etc/caddy/Caddyfile; systemctl enable caddy; systemctl restart caddy'
 EOF
 )"
 user_data="$(printf '%s' "$cloud_init" | base64 | tr -d '\n')"
