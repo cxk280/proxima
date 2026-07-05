@@ -29,3 +29,5 @@ next-env.d.ts
 
 # Local edge-case working record (not committed)
 docs/EDGE_CASES.md
+docs/USERS.md
+docs/USER_PERSONAS_FINDING.md
