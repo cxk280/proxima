@@ -5,6 +5,8 @@ import { Globe } from "@/components/globe/Globe";
 import {
   DEFAULT_ORIGIN,
   detectOrigin,
+  haversineKm,
+  REGIONS,
   rttBand,
   rttColor,
   SIMULATED_ORIGINS,
@@ -32,6 +34,7 @@ export function VoiceAgentDemo() {
   const [micState, setMicState] = useState<MicState>("idle");
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
   const [probe, setProbe] = useState<ProbeResult | null>(null);
+  const [failover, setFailover] = useState<{ from: string; to: string; deltaMs: number } | null>(null);
 
   const turnIndex = useRef(0);
   const entryId = useRef(0);
@@ -68,8 +71,21 @@ export function VoiceAgentDemo() {
   const accent = probe ? rttColor(probe.rttMs) : "#22d3ee";
   const band = probe ? rttBand(probe.rttMs) : "good";
 
-  function talk() {
-    if (micState !== "idle" || !probe) return;
+  async function talk() {
+    if (micState === "listening" || micState === "thinking" || micState === "speaking" || !probe) return;
+
+    // Real microphone-permission gate: prompt for mic access; a denial surfaces the
+    // mic-blocked state. We don't record — the track is released immediately.
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((t) => t.stop());
+      } catch {
+        setMicState("denied");
+        return;
+      }
+    }
+
     const turn = turnAt(turnIndex.current);
     const region = probe.region.city;
     const rttMs = probe.rttMs;
@@ -90,6 +106,20 @@ export function VoiceAgentDemo() {
         turnIndex.current += 1;
       }, 3600),
     );
+  }
+
+  // Simulate the nearest region hitting capacity: the session fails over to the
+  // next-nearest healthy region, with a banner + a system note in the transcript.
+  function simulateOutage() {
+    if (!probe) return;
+    const current = probe.region;
+    const alt = REGIONS.filter((r) => r.id !== current.id && r.health !== "down").reduce((best, r) =>
+      haversineKm(origin, r) < haversineKm(origin, best) ? r : best,
+    );
+    const deltaMs = Math.max(1, Math.round((haversineKm(origin, alt) - haversineKm(origin, current)) / 100));
+    setFailover({ from: current.city, to: alt.city, deltaMs });
+    addEntry({ role: "system", text: `${current.city} hit capacity — re-homed to ${alt.city} (+${deltaMs}ms)` });
+    timers.current.push(setTimeout(() => setFailover(null), 6000));
   }
 
   function addEntry(e: Omit<TranscriptEntry, "id">) {
@@ -148,6 +178,24 @@ export function VoiceAgentDemo() {
               This is what single-region GPU hosting feels like — {probe.rttMs}ms from {origin.label}.
             </p>
           )}
+
+          {failover && (
+            <p
+              className="flex items-center gap-2 rounded-lg border px-3.5 py-2.5 text-[13px]"
+              style={{ borderColor: "rgba(251,191,36,0.4)", backgroundColor: "#1a1405", color: "#f5cf7a" }}
+            >
+              <span className="text-amber">⚑</span>
+              {failover.from} hit capacity — re-homed to {failover.to} · +{failover.deltaMs}ms
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={simulateOutage}
+            className="self-start text-xs font-medium text-ink-muted underline-offset-4 transition-colors hover:text-amber hover:underline"
+          >
+            ⚡ Simulate a region outage
+          </button>
         </div>
 
         <Transcript entries={entries} />
