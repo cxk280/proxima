@@ -41,39 +41,41 @@ $py_indented
       [Install]
       WantedBy=multi-user.target
 runcmd:
+  - ufw allow 80/tcp
   - systemctl daemon-reload
   - systemctl enable --now responder
 EOF
 )"
 user_data="$(printf '%s' "$cloud_init" | base64 | tr -d '\n')"
 
-created_ids=()
-declare -A region_of
+# Parallel indexed arrays (ids[i] <-> regions[i] <-> ips[i]) — portable to the
+# bash 3.2 that ships on macOS, which has no associative arrays.
+ids=(); regions=()
 for code in "$@"; do
   grep -qx "$code" <<<"$valid_vultr" || { info "skip $code — not a Vultr region"; continue; }
   grep -qx "$code" <<<"$valid_mesh"  || info "note: $code is a Vultr region but not a mesh id — endpoint won't bind to a mesh region"
-  # cheapest vc2 plan offered in this region
+  # cheapest vc2 plan in this region with >=1GB RAM (Ubuntu 24.04's minimum)
   plan="$(printf '%s' "$plans_json" \
-    | jq -r --arg r "$code" '[.plans[]|select(.locations|index($r))]|sort_by(.monthly_cost)[0].id // empty')"
+    | jq -r --arg r "$code" '[.plans[]|select((.locations|index($r)) and .ram>=1024)]|sort_by(.monthly_cost)[0].id // empty')"
   [ -n "$plan" ] || { info "skip $code — no regular-CPU plan available"; continue; }
   cost="$(printf '%s' "$plans_json" | jq -r --arg p "$plan" '.plans[]|select(.id==$p)|.monthly_cost')"
   info "creating responder in $code  (plan $plan, \$$cost/mo)..."
   body="$(jq -n --arg r "$code" --arg p "$plan" --arg o "$os_id" --arg u "$user_data" --arg t "$PROBE_TAG" \
     '{region:$r, plan:$p, os_id:($o|tonumber), label:("proxima-probe-"+$r), hostname:("probe-"+$r), tags:[$t], backups:"disabled", user_data:$u}')"
   id="$(api POST /instances "$body" | jq -r '.instance.id')"
-  created_ids+=("$id"); region_of["$id"]="$code"
+  ids+=("$id"); regions+=("$code")
 done
 
-[ "${#created_ids[@]}" -ge 1 ] || die "nothing created"
+[ "${#ids[@]}" -ge 1 ] || die "nothing created"
 
 echo "Waiting for IP addresses..." >&2
-declare -A ip_of
+ips=(); for _ in "${ids[@]}"; do ips+=("PENDING"); done
 for _ in $(seq 1 40); do
   pending=0
-  for id in "${created_ids[@]}"; do
-    [ -n "${ip_of[$id]:-}" ] && continue
-    ip="$(api GET "/instances/$id" | jq -r '.instance.main_ip')"
-    if [ "$ip" != "0.0.0.0" ] && [ -n "$ip" ] && [ "$ip" != "null" ]; then ip_of["$id"]="$ip"; else pending=1; fi
+  for i in "${!ids[@]}"; do
+    [ "${ips[$i]}" != "PENDING" ] && continue
+    ip="$(api GET "/instances/${ids[$i]}" | jq -r '.instance.main_ip')"
+    if [ "$ip" != "0.0.0.0" ] && [ -n "$ip" ] && [ "$ip" != "null" ]; then ips[$i]="$ip"; else pending=1; fi
   done
   [ "$pending" -eq 0 ] && break
   sleep 6
@@ -85,8 +87,8 @@ done
 echo >&2
 echo "PROXIMA_REGION_ENDPOINTS (paste into the app host env):" >&2
 json="{"; first=1
-for id in "${created_ids[@]}"; do
-  code="${region_of[$id]}"; ip="${ip_of[$id]:-PENDING}"
+for i in "${!ids[@]}"; do
+  code="${regions[$i]}"; ip="${ips[$i]}"
   [ "$first" -eq 1 ] || json="$json,"; first=0
   json="$json\"$code\":\"http://$ip\""
 done

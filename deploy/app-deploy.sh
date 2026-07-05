@@ -73,7 +73,8 @@ tar czf "$DEPLOY_DIR/.bundle.tgz" -C .next/standalone .
 # --- 4. Ship it + configure services ----------------------------------------
 echo "Shipping bundle to $ip..." >&2
 scp "${SSH_OPTS[@]}" "$DEPLOY_DIR/.bundle.tgz" "root@$ip:/tmp/proxima.tgz" >/dev/null
-ENV_LINE="PROXIMA_REGION_ENDPOINTS=$(printf '%s' "${ENDPOINTS_JSON:-{}}")"
+ENDPOINTS_JSON="${ENDPOINTS_JSON:-}"; [ -n "$ENDPOINTS_JSON" ] || ENDPOINTS_JSON='{}'
+ENV_LINE="PROXIMA_REGION_ENDPOINTS=$ENDPOINTS_JSON"
 
 ssh "${SSH_OPTS[@]}" "root@$ip" "HOST='$HOST' ENV_LINE='$ENV_LINE' bash -s" <<'REMOTE'
 set -euo pipefail
