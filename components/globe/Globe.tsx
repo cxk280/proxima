@@ -46,6 +46,9 @@ export interface GlobeProps {
   region?: Region | null;
   /** RTT to float at the arc's apex, in ms. */
   rttMs?: number | null;
+  /** Whether `rttMs` is a real measurement (default) or a modeled estimate — an EST
+   *  badge is muted and tagged so it never reads as a live number. */
+  real?: boolean;
   /** Colour of the active arc/region (defaults to the region's health colour). */
   accent?: string;
   /** Extra origin→region links to draw (no badge) — used by the leaderboard globe. */
@@ -66,6 +69,7 @@ export function Globe({
   origin = null,
   region = null,
   rttMs = null,
+  real = true,
   accent,
   routes,
   size = 520,
@@ -98,8 +102,11 @@ export function Globe({
     return [{ i, d: buildArc(o, g, cx, cy, radius * 0.2).d, end: g, accent: r.accent ?? "#35e0a1" }];
   });
 
-  const badge = rttMs != null ? `${rttMs} ms` : null;
+  // The apex badge carries provenance: a measured RTT reads in the arc colour, a modeled
+  // one is muted and tagged "est" so it can't be mistaken for a live number.
+  const badge = rttMs != null ? (real ? `${rttMs} ms` : `${rttMs} ms · est`) : null;
   const badgeW = badge ? badge.length * 8.4 + 22 : 0;
+  const badgeColor = real ? arcAccent : "#93a1ba";
 
   return (
     <svg
@@ -229,12 +236,12 @@ export function Globe({
           {/* RTT badge at the apex */}
           {badge && (
             <g className="globe-badge" transform={`translate(${apex.x - badgeW / 2}, ${apex.y - 34})`}>
-              <rect width={badgeW} height={26} rx={13} fill="#0e1830" stroke={arcAccent} strokeOpacity={0.6} />
+              <rect width={badgeW} height={26} rx={13} fill="#0e1830" stroke={badgeColor} strokeOpacity={0.6} />
               <text
                 x={badgeW / 2}
                 y={17}
                 textAnchor="middle"
-                fill={arcAccent}
+                fill={badgeColor}
                 fontSize={13}
                 fontFamily="var(--font-jetbrains, monospace)"
                 fontWeight={500}

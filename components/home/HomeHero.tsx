@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import { Globe } from "@/components/globe/Globe";
 import { Button } from "@/components/ui/Button";
 import { StatTile } from "@/components/ui/StatTile";
-import { detectOrigin, type Origin, type ProbeResult } from "@/lib/mesh";
+import { LatencyValue } from "@/components/ui/LatencyValue";
+import { detectOrigin, type Latency, type Origin, type ProbeResult, type Region } from "@/lib/mesh";
 import { probeOnce } from "@/lib/sdk";
+import { useMeasuredHoming } from "@/lib/hooks/useMeasuredHoming";
 
 const TRUST = [
   { value: "33", label: "GPU regions" },
@@ -19,20 +21,34 @@ const TRUST = [
  */
 export function HomeHero() {
   const [origin, setOrigin] = useState<Origin | null>(null);
-  const [probe, setProbe] = useState<ProbeResult | null>(null);
+  const [modeled, setModeled] = useState<ProbeResult | null>(null);
+
+  // The headline is the viewer's OWN measured round-trip to the nearest region responder.
+  const { homing, resolved } = useMeasuredHoming(origin);
 
   useEffect(() => {
+    detectOrigin().then(setOrigin);
+  }, []);
+
+  // Fallback: only when measurement resolved with no live responder do we show the model.
+  useEffect(() => {
+    if (!origin || !resolved || homing) return;
     let live = true;
-    detectOrigin().then(async (o) => {
-      if (!live) return;
-      setOrigin(o);
-      const p = await probeOnce(o).catch(() => null);
-      if (live) setProbe(p);
-    });
+    probeOnce(origin)
+      .then((p) => live && setModeled(p))
+      .catch(() => {});
     return () => {
       live = false;
     };
-  }, []);
+  }, [origin, resolved, homing]);
+
+  // Prefer the real measurement; fall back to the modeled estimate, tagged EST.
+  const region: Region | null = homing?.region ?? modeled?.region ?? null;
+  const latency: Latency | null = homing
+    ? homing.network
+    : modeled
+      ? { ms: modeled.rttMs, real: false }
+      : null;
 
   return (
     <section className="mx-auto flex w-full max-w-[1280px] flex-1 flex-col items-center gap-10 px-6 py-12 sm:px-12 lg:flex-row lg:justify-between lg:gap-10">
@@ -65,12 +81,19 @@ export function HomeHero() {
           ))}
         </div>
 
-        <p className="h-4 text-xs text-ink-muted" aria-live="polite">
-          {probe
-            ? `Homed on ${probe.region.city} · ${probe.rttMs}ms round trip${
-                origin?.approximate ? " · using your IP region" : ""
-              }`
-            : "Locating your nearest region…"}
+        <p className="flex h-4 items-center gap-1.5 text-xs text-ink-muted" aria-live="polite">
+          {latency && region ? (
+            <>
+              <span>Homed on {region.city} ·</span>
+              <LatencyValue value={latency} className="text-xs" />
+              <span>
+                {latency.real ? "measured from your device" : "round trip"}
+                {origin?.approximate ? " · using your IP region" : ""}
+              </span>
+            </>
+          ) : (
+            "Locating your nearest region…"
+          )}
         </p>
       </div>
 
@@ -78,8 +101,9 @@ export function HomeHero() {
       <div className="relative w-full max-w-[540px] shrink-0">
         <Globe
           origin={origin}
-          region={probe?.region ?? null}
-          rttMs={probe?.rttMs ?? null}
+          region={region}
+          rttMs={latency?.ms ?? null}
+          real={latency?.real ?? true}
           size={540}
           className="h-auto w-full overflow-visible"
         />

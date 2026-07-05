@@ -1,27 +1,37 @@
+import { LatencyValue } from "@/components/ui/LatencyValue";
+import type { Latency } from "@/lib/mesh";
+
 interface RoundTripReadoutProps {
-  networkMs: number | null;
-  inferenceMs: number | null;
-  rttMs: number | null;
-  accent: string;
+  network: Latency | null;
+  inference: Latency | null;
+  total: Latency | null;
 }
 
-/** mic → region → back, broken into network vs inference. */
-export function RoundTripReadout({ networkMs, inferenceMs, rttMs, accent }: RoundTripReadoutProps) {
-  const fmt = (n: number | null) => (n == null ? "— ms" : `${n} ms`);
+/**
+ * mic → region → back, split by provenance: the **network** leg is the viewer's real
+ * measured hop (live); **inference** is modeled (est); the **round-trip** total is
+ * therefore est too, since it includes the modeled leg. Each value renders through
+ * {@link LatencyValue}, so the estimate can never wear the measured styling.
+ */
+export function RoundTripReadout({ network, inference, total }: RoundTripReadoutProps) {
   return (
     <div className="flex gap-2.5 rounded-xl border border-line bg-inset px-4 py-3.5">
-      <Metric label="network" value={fmt(networkMs)} />
-      <Metric label="inference" value={fmt(inferenceMs)} />
-      <Metric label="round-trip" value={fmt(rttMs)} color={accent} />
+      <Metric label={network?.real ? "network · live" : "network"} value={network} />
+      <Metric label="inference · est" value={inference} />
+      <Metric label="round-trip" value={total} />
     </div>
   );
 }
 
-function Metric({ label, value, color }: { label: string; value: string; color?: string }) {
+function Metric({ label, value }: { label: string; value: Latency | null }) {
   return (
     <div className="flex-1">
-      <div className="font-mono text-lg" style={{ color: color ?? "#e7edf7" }}>
-        {value}
+      <div className="text-lg">
+        {value ? (
+          <LatencyValue value={value} className="text-lg" />
+        ) : (
+          <span className="font-mono text-lg text-ink-muted">— ms</span>
+        )}
       </div>
       <div className="mt-0.5 text-[11px] font-medium text-ink-muted">{label}</div>
     </div>
