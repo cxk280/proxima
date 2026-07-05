@@ -23,7 +23,17 @@ export function Transcript({ entries }: TranscriptProps) {
           Tap the mic and speak — replies are tagged with the region that answered.
         </p>
       )}
-      {entries.map((e) => (
+      {entries.map((e) =>
+        e.role === "system" ? (
+          <div
+            key={e.id}
+            className="flex items-center justify-center gap-2 self-center rounded-lg border px-3 py-2 text-center text-[12px]"
+            style={{ borderColor: "rgba(251,191,36,0.4)", backgroundColor: "#1a1405", color: "#f5cf7a" }}
+          >
+            <span className="text-amber">⚑</span>
+            {e.text}
+          </div>
+        ) : (
         <div key={e.id} className={`flex flex-col gap-1 ${e.role === "user" ? "items-end" : "items-start"}`}>
           <div
             className={`max-w-[320px] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed ${
