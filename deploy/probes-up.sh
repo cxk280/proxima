@@ -11,7 +11,7 @@ load_env
 
 [ "$#" -ge 1 ] || die "usage: ./probes-up.sh <region> [region...]   e.g. ./probes-up.sh fra nrt gru syd"
 
-echo "Resolving Vultr catalog…" >&2
+echo "Resolving Vultr catalog..." >&2
 regions_json="$(api GET /regions)"
 plans_json="$(api GET /plans?type=vc2)"
 os_json="$(api GET /os?per_page=500)"
@@ -57,7 +57,7 @@ for code in "$@"; do
     | jq -r --arg r "$code" '[.plans[]|select(.locations|index($r))]|sort_by(.monthly_cost)[0].id // empty')"
   [ -n "$plan" ] || { info "skip $code — no regular-CPU plan available"; continue; }
   cost="$(printf '%s' "$plans_json" | jq -r --arg p "$plan" '.plans[]|select(.id==$p)|.monthly_cost')"
-  info "creating responder in $code  (plan $plan, \$$cost/mo)…"
+  info "creating responder in $code  (plan $plan, \$$cost/mo)..."
   body="$(jq -n --arg r "$code" --arg p "$plan" --arg o "$os_id" --arg u "$user_data" --arg t "$PROBE_TAG" \
     '{region:$r, plan:$p, os_id:($o|tonumber), label:("proxima-probe-"+$r), hostname:("probe-"+$r), tags:[$t], backups:"disabled", user_data:$u}')"
   id="$(api POST /instances "$body" | jq -r '.instance.id')"
@@ -66,7 +66,7 @@ done
 
 [ "${#created_ids[@]}" -ge 1 ] || die "nothing created"
 
-echo "Waiting for IP addresses…" >&2
+echo "Waiting for IP addresses..." >&2
 declare -A ip_of
 for _ in $(seq 1 40); do
   pending=0

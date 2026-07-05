@@ -5,7 +5,7 @@ set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 load_env
 
-echo "Checking Vultr API key (read-only)…" >&2
+echo "Checking Vultr API key (read-only)..." >&2
 
 acct="$(api GET /account)"
 name="$(printf '%s' "$acct" | jq -r '.account.name // "?"')"

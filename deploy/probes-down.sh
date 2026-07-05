@@ -10,7 +10,7 @@ ids="$(printf '%s' "$list" | jq -r '.instances[].id')"
 if [ -z "$ids" ]; then echo "No probe responders running. Nothing to do."; exit 0; fi
 
 n="$(printf '%s\n' "$ids" | grep -c .)"
-echo "Destroying $n probe responder(s)…" >&2
+echo "Destroying $n probe responder(s)..." >&2
 while read -r id; do
   [ -n "$id" ] || continue
   code="$(printf '%s' "$list" | jq -r --arg i "$id" '.instances[]|select(.id==$i)|.region')"
