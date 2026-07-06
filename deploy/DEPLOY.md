@@ -36,7 +36,7 @@ Pick a handful of regions that prove "sub-40ms" for your audience's geography â€
 not all 33. Codes are the airport-style mesh ids (`fra nrt gru syd ewr sjc â€¦`).
 
 ```bash
-./deploy/probes-up.sh fra nrt gru syd ewr sjc     # boots responders, prints JSON
+./deploy/probes-up.sh fra nrt gru ewr     # boots responders, prints JSON
 ```
 
 Copy the printed `PROXIMA_REGION_ENDPOINTS` JSON and push it to the app host:
