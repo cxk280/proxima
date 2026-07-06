@@ -66,7 +66,7 @@ export function VoiceAgentDemo() {
   const pinId = pinned ? US_EAST_REGION_ID : (chosenRegionId ?? undefined);
 
   // The modeled baseline (inference leg + region + a live heartbeat) still streams over the
-  // connect() SSE session — the SDK showcase — and is the fallback when nothing is measured.
+  // connect() SSE session — the SDK demo — and is the fallback when nothing is measured.
   useEffect(() => {
     if (!sessionRef.current) {
       const session = connect({ origin, pinnedRegionId: pinId });

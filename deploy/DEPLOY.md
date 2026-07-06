@@ -71,7 +71,7 @@ dashboard as a backstop, and apply any account promo credit.
 ## Notes / limits
 
 - Real per-region GPU *inference* (Tier 3) is intentionally out of scope — the
-  showcase is about network proximity, which the responders prove honestly.
+  demo is about network proximity, which the responders prove honestly.
 - Behind a raw VPS there are no edge geo-IP headers, so the "Auto · my location"
   origin falls back to a default city; the city chips drive the demo. Wiring a
   geo-IP lookup is a later enhancement.

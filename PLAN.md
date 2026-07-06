@@ -1,8 +1,5 @@
 # Proxima — Global sub-40ms edge-AI mesh
 
-> One of four Vultr capability-showcase projects. Sibling repos: `enclave`, `mothertongue`, `acre`.
-> Optimization target: a **Vultr capability showcase** — make the unique advantage viscerally obvious.
-
 ## Elevator pitch
 
 Proxima turns Vultr's 33 GPU regions into a single "nearest-GPU" primitive. A developer points their
@@ -10,8 +7,8 @@ interactive-AI app at one Proxima endpoint; Proxima routes each session to the c
 capacity and guarantees a sub-40ms round trip regardless of where on Earth the user is. It ships as a
 thin **SDK** plus a reference voice-agent demo.
 
-**The single Vultr capability it proves:** the 33-region, 2–40ms-to-90%-of-humanity GPU mesh — the
-"latency-honest everywhere" primitive hyperscaler geography can't deliver for GPU workloads.
+**The core idea:** a 33-region, 2–40ms-to-90%-of-humanity GPU mesh — the "latency-honest
+everywhere" primitive that hyperscaler geography can't deliver for GPU workloads.
 
 ## Target user / niche & why hyperscalers can't serve it
 
@@ -21,15 +18,15 @@ US/EU regions, so a user in Lagos, Jakarta, or Santiago eats 200ms+ of network l
 model even runs. Proxima's whole value is being physically close everywhere at once, which requires
 Vultr's uniquely broad GPU footprint.
 
-## Showcase architecture
+## Architecture
 
 - **Compute:** Vultr **Cloud GPU** deployed across many regions running an identical inference image.
 - **Routing:** a geo/latency-aware routing tier (anycast or a lightweight router + health/latency
   probes) that selects the nearest healthy region per session; **Load Balancers** in-region.
 - **SDK:** a small client library (`connect()` → nearest-region session) + a reference voice agent.
-- **Capability spotlight (make it *visible*):** an animated **globe** that lights up whichever of the
-  33 regions answered you, annotated with measured RTT, plus a **"sub-40ms anywhere" leaderboard**
-  that fires probes from simulated global origins and shows every one landing under 40ms.
+- **Making it visible:** an animated **globe** that lights up whichever of the 33 regions answered
+  you, annotated with measured RTT, plus a **"sub-40ms anywhere" leaderboard** that fires probes from
+  simulated global origins and shows every one landing under 40ms.
 
 ## Demo script (~60s)
 
