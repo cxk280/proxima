@@ -39,6 +39,8 @@ export function VoiceAgentDemo() {
   const [pinned, setPinned] = useState(false); // US-East contrast pin
   const [chosenRegionId, setChosenRegionId] = useState<string | null>(null); // viewer-picked region
   const [micState, setMicState] = useState<MicState>("idle");
+  const [draft, setDraft] = useState(""); // type-to-send input (no microphone)
+  const [speakReplies, setSpeakReplies] = useState(false); // off by default → no speaker echo over a call
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
   const [probe, setProbe] = useState<ProbeResult | null>(null); // modeled baseline (inference, fallback)
   const [failover, setFailover] = useState<{ from: string; to: string; deltaMs: number } | null>(null);
@@ -96,8 +98,44 @@ export function VoiceAgentDemo() {
   const accent = network ? rttColor(network.ms) : "#22d3ee";
   const networkBad = network != null && rttBand(network.ms) === "bad";
 
+  const busy = micState === "listening" || micState === "thinking" || micState === "speaking";
+
+  // Core turn: send one user message to the real Claude agent and render the reply.
+  // `spoken` gates browser text-to-speech — off for typed input so the agent's voice can't
+  // echo back into a call's microphone (screen-share / Zoom-safe).
+  async function respond(userText: string, spoken: boolean) {
+    if (busy || !network || !region) return;
+    const scripted = turnAt(turnIndex.current);
+    const city = region.city;
+    const replyLatency = network;
+    const replyAccent = accent;
+
+    addEntry({ role: "user", text: userText });
+    convo.current.push({ role: "user", content: userText });
+
+    // THINK — the real Claude-powered agent (falls back to the scripted reply, tagged).
+    setMicState("thinking");
+    const reply = await chat(convo.current);
+    const agentText = reply.text || scripted.agent;
+    convo.current.push({ role: "assistant", content: agentText });
+    convo.current = convo.current.slice(-16); // bound long sessions (server also caps)
+
+    // SPEAK — real browser text-to-speech, only when asked; otherwise the reply is read
+    // from the transcript. Tag the reply Claude vs demo-script either way.
+    if (spoken) {
+      setMicState("speaking");
+      speak(agentText);
+    }
+    addEntry({ role: "agent", text: agentText, region: city, rttMs: replyLatency.ms, accent: replyAccent, real: reply.real });
+    turnIndex.current += 1;
+
+    const restMs = spoken ? Math.min(6000, 900 + agentText.length * 45) : 300;
+    timers.current.push(setTimeout(() => setMicState("idle"), restMs));
+  }
+
+  // Mic path: real microphone-permission gate + browser speech-to-text, spoken reply.
   async function talk() {
-    if (micState === "listening" || micState === "thinking" || micState === "speaking" || !network || !region) return;
+    if (busy || !network || !region) return;
 
     // Real microphone-permission gate (micro-states): prompt for mic access; a denial
     // surfaces the mic-blocked state. We don't record — the track is released immediately.
@@ -111,33 +149,18 @@ export function VoiceAgentDemo() {
       }
     }
 
-    const scripted = turnAt(turnIndex.current);
-    const city = region.city;
-    const replyLatency = network;
-    const replyAccent = accent;
-
-    // 1. LISTEN — real browser speech-to-text where available; otherwise the scripted line.
+    // LISTEN — real browser speech-to-text where available; otherwise the scripted line.
     setMicState("listening");
     const heard = supportsSpeechInput() ? await listenOnce(8000) : null;
-    const userText = heard ?? scripted.user;
-    addEntry({ role: "user", text: userText });
-    convo.current.push({ role: "user", content: userText });
+    await respond(heard ?? turnAt(turnIndex.current).user, true);
+  }
 
-    // 2. THINK — the real Claude-powered agent (falls back to the scripted reply, tagged).
-    setMicState("thinking");
-    const reply = await chat(convo.current);
-    const agentText = reply.text || scripted.agent;
-    convo.current.push({ role: "assistant", content: agentText });
-    convo.current = convo.current.slice(-16); // bound long sessions (server also caps)
-
-    // 3. SPEAK — real browser text-to-speech; tag the reply Claude vs demo-script.
-    setMicState("speaking");
-    speak(agentText);
-    addEntry({ role: "agent", text: agentText, region: city, rttMs: replyLatency.ms, accent: replyAccent, real: reply.real });
-    turnIndex.current += 1;
-
-    const speakMs = Math.min(6000, 900 + agentText.length * 45);
-    timers.current.push(setTimeout(() => setMicState("idle"), speakMs));
+  // Text path: type a prompt and send it — no microphone, safe to present over a call.
+  async function send() {
+    const text = draft.trim();
+    if (!text || busy || !network || !region) return;
+    setDraft("");
+    await respond(text, speakReplies);
   }
 
   // Simulate the nearest region hitting capacity: the session fails over to the
@@ -210,6 +233,43 @@ export function VoiceAgentDemo() {
           </div>
 
           <MicControl state={micState} onTalk={talk} />
+
+          {/* Type-to-send — no microphone, so it's safe to present over a call. Replies
+              render in the transcript; browser speech-out is off by default. */}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void send();
+            }}
+            className="flex flex-col gap-2"
+          >
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                disabled={busy}
+                placeholder="Type a message to the agent…"
+                aria-label="Type a message to the agent"
+                className="flex-1 rounded-lg border border-line bg-elevated px-3 py-2 text-[13px] text-ink outline-none transition-colors placeholder:text-ink-muted focus:border-cyan disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={busy || !draft.trim()}
+                className="rounded-lg border border-line bg-elevated px-4 py-2 text-[13px] font-medium text-ink-secondary transition-colors hover:text-ink disabled:opacity-40"
+              >
+                Send
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSpeakReplies((v) => !v)}
+              aria-pressed={speakReplies}
+              className="self-start text-xs font-medium text-ink-muted underline-offset-4 transition-colors hover:text-ink hover:underline"
+            >
+              {speakReplies ? "🔊 Speak replies: on" : "🔇 Speak replies: off (safe to present)"}
+            </button>
+          </form>
 
           <RoundTripReadout network={network} inference={inference} total={total} />
 
