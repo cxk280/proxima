@@ -17,8 +17,9 @@ import {
   type ProbeResult,
   type Region,
 } from "@/lib/mesh";
-import { connect, type Session } from "@/lib/sdk";
+import { chat, connect, type ChatTurn, type Session } from "@/lib/sdk";
 import { useMeasuredHoming } from "@/lib/hooks/useMeasuredHoming";
+import { listenOnce, speak, supportsSpeechInput } from "@/lib/voice/speech";
 import { turnAt } from "@/lib/demo/conversation";
 import { OriginSelector } from "./OriginSelector";
 import { MicControl } from "./MicControl";
@@ -46,6 +47,7 @@ export function VoiceAgentDemo() {
   const entryId = useRef(0);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const sessionRef = useRef<Session | null>(null);
+  const convo = useRef<ChatTurn[]>([]); // running conversation for the real Claude agent
 
   useEffect(() => {
     detectOrigin().then(setAutoOrigin);
@@ -109,26 +111,33 @@ export function VoiceAgentDemo() {
       }
     }
 
-    const turn = turnAt(turnIndex.current);
+    const scripted = turnAt(turnIndex.current);
     const city = region.city;
     const replyLatency = network;
     const replyAccent = accent;
 
+    // 1. LISTEN — real browser speech-to-text where available; otherwise the scripted line.
     setMicState("listening");
-    timers.current.push(
-      setTimeout(() => {
-        addEntry({ role: "user", text: turn.user });
-        setMicState("thinking");
-      }, 1200),
-      setTimeout(() => {
-        setMicState("speaking");
-        addEntry({ role: "agent", text: turn.agent, region: city, rttMs: replyLatency.ms, accent: replyAccent });
-      }, 2000),
-      setTimeout(() => {
-        setMicState("idle");
-        turnIndex.current += 1;
-      }, 3600),
-    );
+    const heard = supportsSpeechInput() ? await listenOnce(8000) : null;
+    const userText = heard ?? scripted.user;
+    addEntry({ role: "user", text: userText });
+    convo.current.push({ role: "user", content: userText });
+
+    // 2. THINK — the real Claude-powered agent (falls back to the scripted reply, tagged).
+    setMicState("thinking");
+    const reply = await chat(convo.current);
+    const agentText = reply.text || scripted.agent;
+    convo.current.push({ role: "assistant", content: agentText });
+    convo.current = convo.current.slice(-16); // bound long sessions (server also caps)
+
+    // 3. SPEAK — real browser text-to-speech; tag the reply Claude vs demo-script.
+    setMicState("speaking");
+    speak(agentText);
+    addEntry({ role: "agent", text: agentText, region: city, rttMs: replyLatency.ms, accent: replyAccent, real: reply.real });
+    turnIndex.current += 1;
+
+    const speakMs = Math.min(6000, 900 + agentText.length * 45);
+    timers.current.push(setTimeout(() => setMicState("idle"), speakMs));
   }
 
   // Simulate the nearest region hitting capacity: the session fails over to the
