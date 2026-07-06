@@ -76,15 +76,20 @@ scp "${SSH_OPTS[@]}" "$DEPLOY_DIR/.bundle.tgz" "root@$ip:/tmp/proxima.tgz" >/dev
 ENDPOINTS_JSON="${ENDPOINTS_JSON:-}"; [ -n "$ENDPOINTS_JSON" ] || ENDPOINTS_JSON='{}'
 ENV_LINE="PROXIMA_REGION_ENDPOINTS=$ENDPOINTS_JSON"
 
-ssh "${SSH_OPTS[@]}" "root@$ip" "HOST='$HOST' ENV_LINE='$ENV_LINE' bash -s" <<'REMOTE'
+ssh "${SSH_OPTS[@]}" "root@$ip" "HOST='$HOST' ENV_LINE='$ENV_LINE' AK='${ANTHROPIC_API_KEY:-}' bash -s" <<'REMOTE'
 set -euo pipefail
 rm -rf /opt/proxima && mkdir -p /opt/proxima
 tar xzf /tmp/proxima.tgz -C /opt/proxima && rm /tmp/proxima.tgz
+umask 077
 cat >/opt/proxima/.env <<EOF
 PORT=3000
 HOSTNAME=127.0.0.1
 $ENV_LINE
 EOF
+# ANTHROPIC_API_KEY (from deploy/.env) makes the voice agent a real Claude call; blank →
+# the app's scripted fallback. Written only when set, and never echoed.
+[ -n "$AK" ] && echo "ANTHROPIC_API_KEY=$AK" >>/opt/proxima/.env
+chmod 600 /opt/proxima/.env
 cat >/etc/systemd/system/proxima.service <<EOF
 [Unit]
 Description=Proxima app
