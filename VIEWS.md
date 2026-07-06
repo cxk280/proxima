@@ -4,7 +4,7 @@ This file verbally describes **every possible view** in the Proxima application.
 truth for the UI/UX. Figma mocks are created from this file and must be approved before any UI coding
 begins.
 
-Proxima is a developer platform + SDK. The web app is a **capability showcase**: its job is to make
+Proxima is a developer platform + SDK. The web app is an **interactive demo**: its job is to make
 the "nearest-GPU, sub-40ms anywhere" primitive viscerally obvious. The animated globe is the hero of
 every screen it appears on.
 

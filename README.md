@@ -5,8 +5,8 @@ Vultr's 33 GPU regions, guaranteeing sub-40ms response **anywhere on Earth** ins
 US/EU. It serves real-time AI products — voice agents, live AR, game NPCs — that need to feel instant
 for a genuinely global user base.
 
-**Vultr capability this proves:** a 33-region GPU mesh reaching 90% of the world's population within
-2–40ms — a geographic footprint of *GPU* capacity that hyperscalers don't have.
+**Why it matters:** a 33-region GPU mesh reaching 90% of the world's population within 2–40ms — a
+geographic footprint of *GPU* capacity that hyperscalers don't have.
 
 ## Cost estimate (tight budget)
 

@@ -2,7 +2,7 @@
   "name": "proxima",
   "version": "0.1.0",
   "private": true,
-  "description": "Global sub-40ms edge-AI mesh — Vultr capability showcase (web app + SDK)",
+  "description": "Global sub-40ms edge-AI mesh on Vultr's GPU regions (web app + SDK)",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
