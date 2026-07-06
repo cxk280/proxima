@@ -50,6 +50,7 @@ export function Transcript({ entries }: TranscriptProps) {
           {e.role === "agent" && e.region && (
             <span className="font-mono text-[10px]" style={{ color: e.accent ?? "#5d6a82" }}>
               ▸ {e.region} · {e.rttMs} ms
+              {e.real === undefined ? "" : e.real ? " · Claude" : " · demo script"}
             </span>
           )}
         </div>
