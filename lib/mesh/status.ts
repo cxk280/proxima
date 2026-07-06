@@ -13,6 +13,9 @@ export interface RegionStatus {
   sparkline: number[];
   /** Last failover note, if any. */
   failover: string | null;
+  /** True when health + RTT are measured live (real responder probe); false when this is
+   *  the modeled snapshot. Capacity / LB nodes / sparkline are always modeled. */
+  real: boolean;
 }
 
 const SPARK: Record<Health, number[]> = {
@@ -38,7 +41,23 @@ function mk(
     currentRttMs,
     sparkline: SPARK[health],
     failover,
+    real: false, // meshStatus() is the modeled snapshot; meshHealth() sets real:true
   };
+}
+
+/** Sparkline shapes by health — shared with the live health prober. */
+export const HEALTH_SPARK = SPARK;
+
+/**
+ * Map a responder reachability probe to a health state. Reachable → healthy; unreachable
+ * → down. "degraded" is reserved for a responder that answers but is *near the probe
+ * timeout* (genuinely struggling) — the threshold sits close to the 2500ms timeout so a
+ * merely-distant-but-fine region's cold-handshake RTT can't spuriously trip it.
+ */
+const DEGRADED_MS = 2200;
+export function healthFromReach(up: boolean, ms: number | null): Health {
+  if (!up) return "down";
+  return ms != null && ms > DEGRADED_MS ? "degraded" : "healthy";
 }
 
 /**
