@@ -1,7 +1,11 @@
-import { Fragment } from "react";
+"use client";
+
+import { Fragment, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
+  dragRotation,
   framingLongitude,
   graticulePaths,
+  landPath,
   project,
   REGIONS,
   type GeoPoint,
@@ -10,6 +14,7 @@ import {
   type ProjectedPoint,
   type Projection,
   type Region,
+  type Rotation,
 } from "@/lib/mesh";
 
 const HEALTH_COLOR: Record<Health, string> = {
@@ -59,10 +64,12 @@ export interface GlobeProps {
 }
 
 /**
- * The animated wireframe globe — the hero of every latency-centric view. Pure and
- * deterministic: it projects lat/lon onto an orthographic sphere and draws the
- * graticule, region dots, and the origin→region arc from props alone (SSR-safe). The
- * arc-draw, pulse, and glow are CSS animations.
+ * The animated wireframe globe — the hero of every latency-centric view. It projects
+ * lat/lon onto an orthographic sphere and draws real coastlines, the graticule, region
+ * dots, and the origin→region arc. The initial render is deterministic and SSR-safe
+ * (rotation is seeded from props); once the viewer click/touch-drags, they take over
+ * the rotation so they can spin the sphere and find any node. Arc-draw, pulse, and glow
+ * are CSS animations.
  */
 export function Globe({
   regions = REGIONS,
@@ -79,11 +86,50 @@ export function Globe({
   const cy = size / 2;
   const radius = size * 0.46;
 
-  const lon0 =
+  // Auto-framing from props: longitude that best frames the active route (or the lone
+  // point), with a gentle tilt. This is what renders on the server and until first drag.
+  const autoLon0 =
     origin && region ? framingLongitude(origin, region) : (region?.lon ?? origin?.lon ?? 10);
-  const proj: Projection = { cx, cy, radius, lon0, lat0: 12 };
+
+  // Once the viewer drags, `rotation` holds their manual view and overrides auto-framing.
+  const [rotation, setRotation] = useState<Rotation | null>(null);
+  const [grabbing, setGrabbing] = useState(false);
+  // The single active gesture: which pointer owns it, where it started, and the
+  // orientation at that moment. A second finger is ignored until the first lifts.
+  const gesture = useRef<{ id: number; x: number; y: number; start: Rotation } | null>(null);
+
+  const lon0 = rotation?.lon0 ?? autoLon0;
+  const lat0 = rotation?.lat0 ?? 12;
+  const proj: Projection = { cx, cy, radius, lon0, lat0 };
+
+  const onPointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
+    if (gesture.current) return; // already dragging with another pointer — ignore
+    gesture.current = { id: e.pointerId, x: e.clientX, y: e.clientY, start: { lon0, lat0 } };
+    setGrabbing(true);
+    // Capture so the drag keeps tracking even when the cursor leaves the sphere. Guard
+    // the rare browsers where the pointer is already gone (throws) — the drag still
+    // works from element-level moves.
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* non-fatal: capture unavailable */
+    }
+  };
+  const onPointerMove = (e: ReactPointerEvent<SVGSVGElement>) => {
+    const g = gesture.current;
+    if (!g || e.pointerId !== g.id) return;
+    setRotation(dragRotation(g.start, e.clientX - g.x, e.clientY - g.y, radius));
+  };
+  const endGesture = (e: ReactPointerEvent<SVGSVGElement>) => {
+    if (gesture.current && e.pointerId !== gesture.current.id) return;
+    gesture.current = null;
+    setGrabbing(false);
+  };
 
   const graticule = graticulePaths(proj);
+  // Coastlines re-project only when the orientation/size actually changes — not on the
+  // extra renders a drag's grab-state toggle triggers.
+  const land = useMemo(() => landPath({ cx, cy, radius, lon0, lat0 }), [cx, cy, radius, lon0, lat0]);
   const arcAccent = accent ?? (region ? HEALTH_COLOR[region.health] : "#22d3ee");
 
   const originPt = origin ? project(origin, proj) : null;
@@ -115,9 +161,16 @@ export function Globe({
       role="img"
       aria-label={
         region && rttMs != null
-          ? `Globe showing a ${rttMs}ms route to ${region.city}`
-          : "Globe of Proxima's GPU mesh regions"
+          ? `Globe showing a ${rttMs}ms route to ${region.city}. Drag to rotate.`
+          : "Globe of Proxima's GPU mesh regions. Drag to rotate."
       }
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endGesture}
+      onPointerCancel={endGesture}
+      // pan-y keeps vertical page-scroll working on touch (so the globe never traps the
+      // page) while horizontal swipes spin the sphere; a mouse gets full 2-axis drag.
+      style={{ cursor: grabbing ? "grabbing" : "grab", touchAction: "pan-y" }}
     >
       <defs>
         <radialGradient id="globe-fill" cx="42%" cy="38%" r="72%">
@@ -143,6 +196,19 @@ export function Globe({
         filter="url(#globe-soft-glow)"
       />
       <circle cx={cx} cy={cy} r={radius} fill="url(#globe-fill)" stroke="#22d3ee" strokeOpacity={0.32} strokeWidth={1.5} />
+
+      {/* Real coastlines — filled land over the darker water so it's obvious which
+          landmass (and therefore which edge node) you're looking at. */}
+      {land && (
+        <path
+          d={land}
+          fill="#1c3f5c"
+          fillOpacity={0.92}
+          stroke="#4fd6ea"
+          strokeOpacity={0.5}
+          strokeWidth={0.6}
+        />
+      )}
 
       {/* Graticule */}
       <g stroke="#22d3ee" strokeOpacity={0.16} strokeWidth={1} fill="none">
