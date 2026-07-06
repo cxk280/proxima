@@ -76,7 +76,7 @@ scp "${SSH_OPTS[@]}" "$DEPLOY_DIR/.bundle.tgz" "root@$ip:/tmp/proxima.tgz" >/dev
 ENDPOINTS_JSON="${ENDPOINTS_JSON:-}"; [ -n "$ENDPOINTS_JSON" ] || ENDPOINTS_JSON='{}'
 ENV_LINE="PROXIMA_REGION_ENDPOINTS=$ENDPOINTS_JSON"
 
-ssh "${SSH_OPTS[@]}" "root@$ip" "HOST='$HOST' ENV_LINE='$ENV_LINE' AK='${ANTHROPIC_API_KEY:-}' bash -s" <<'REMOTE'
+ssh "${SSH_OPTS[@]}" "root@$ip" "HOST='$HOST' IP='$ip' ENV_LINE='$ENV_LINE' AK='${ANTHROPIC_API_KEY:-}' bash -s" <<'REMOTE'
 set -euo pipefail
 rm -rf /opt/proxima && mkdir -p /opt/proxima
 tar xzf /tmp/proxima.tgz -C /opt/proxima && rm /tmp/proxima.tgz
@@ -106,6 +106,14 @@ cat >/etc/caddy/Caddyfile <<EOF
 $HOST {
 	reverse_proxy 127.0.0.1:3000
 }
+
+# Raw-IP access over plain HTTP (no trusted cert exists for a bare IP, so this is
+# http-only). Handy for a quick share where you don't want to read out the
+# <ip>.sslip.io name. Note: browser mic / speech need a secure context, so the
+# voice agent's mic won't work here — use the type-to-send box instead.
+http://$IP {
+	reverse_proxy 127.0.0.1:3000
+}
 EOF
 systemctl daemon-reload
 systemctl enable --now proxima
@@ -116,6 +124,7 @@ REMOTE
 rm -f "$DEPLOY_DIR/.bundle.tgz"
 echo >&2
 echo "✓ Deployed. App host: $ip" >&2
-echo "  URL: https://$HOST" >&2
+echo "  URL:        https://$HOST   (padlock + mic/voice work)" >&2
+echo "  Raw IP:     http://$ip   (plain HTTP; type-to-send only, no mic)" >&2
 echo "  (first HTTPS hit may take ~30s while Caddy fetches a Let's Encrypt cert)" >&2
 [ "${ENDPOINTS_JSON:-}" = "" ] && echo "  Regions are all MODELED (no probe endpoints passed). Run probes-up.sh then re-run this with the JSON to make regions real." >&2
