@@ -23,8 +23,9 @@ curl -s -X POST "$S/api/chat" -H 'content-type: application/json' \
   -d '{"messages":[{"role":"user","content":"say hi"}]}' | jq -c '{real}'
 ```
 
-Want: **app 200**, **6 healthy / 0 down**, voice **`real:true`**. A single transient
-`down` can appear right after a redeploy (cold probe) — re-run; it settles.
+Want: **app 200**, **1 healthy / 0 down** (the single `bom` region — every other region
+is modeled), voice **`real:true`**. A single transient `down` can appear right after a
+redeploy (cold probe) — re-run; it settles.
 
 Then open the HTTPS URL in the **exact browser window** you'll present from, so the
 Let's Encrypt cert is warm and the tab is ready.
