@@ -42,6 +42,12 @@ function buildArc(a: ProjectedPoint, b: ProjectedPoint, cx: number, cy: number, 
   return { d, apex };
 }
 
+/** Quantise a projected pixel coordinate to 0.1px. The projection trig differs in the
+ *  last ULP between the server's and browser's V8, so rendering raw floats trips a React
+ *  hydration mismatch when this client component hydrates — rounding keeps the server and
+ *  client SVG byte-identical (the graticule/arc paths already round the same way). */
+const q = (n: number) => n.toFixed(1);
+
 export interface GlobeProps {
   /** Region dots to plot. Defaults to the full mesh. */
   regions?: Region[];
@@ -170,7 +176,13 @@ export function Globe({
       onPointerCancel={endGesture}
       // pan-y keeps vertical page-scroll working on touch (so the globe never traps the
       // page) while horizontal swipes spin the sphere; a mouse gets full 2-axis drag.
-      style={{ cursor: grabbing ? "grabbing" : "grab", touchAction: "pan-y" }}
+      style={{
+        cursor: grabbing ? "grabbing" : "grab",
+        touchAction: "pan-y",
+        // Dragging/double-tapping the globe must not select the RTT-badge or dot text.
+        userSelect: "none",
+        WebkitUserSelect: "none",
+      }}
     >
       <defs>
         <radialGradient id="globe-fill" cx="42%" cy="38%" r="72%">
@@ -198,15 +210,17 @@ export function Globe({
       <circle cx={cx} cy={cy} r={radius} fill="url(#globe-fill)" stroke="#22d3ee" strokeOpacity={0.32} strokeWidth={1.5} />
 
       {/* Real coastlines — filled land over the darker water so it's obvious which
-          landmass (and therefore which edge node) you're looking at. */}
+          landmass (and therefore which edge node) you're looking at. The fill is kept a
+          clear step lighter than the water so continents read on their own, with a
+          brighter coastline stroke reinforcing the edge. */}
       {land && (
         <path
           d={land}
-          fill="#1c3f5c"
-          fillOpacity={0.92}
-          stroke="#4fd6ea"
-          strokeOpacity={0.5}
-          strokeWidth={0.6}
+          fill="#2a597f"
+          fillOpacity={0.95}
+          stroke="#5fdcef"
+          strokeOpacity={0.6}
+          strokeWidth={0.7}
         />
       )}
 
@@ -227,8 +241,8 @@ export function Globe({
           return (
             <circle
               key={r.id}
-              cx={p.x}
-              cy={p.y}
+              cx={q(p.x)}
+              cy={q(p.y)}
               r={isActive ? 4.5 : 2.6}
               fill={color}
               opacity={isActive ? 1 : 0.7}
@@ -255,8 +269,8 @@ export function Globe({
                 style={{ filter: `drop-shadow(0 0 5px ${r.accent})` }}
               />
               <circle
-                cx={r.end.x}
-                cy={r.end.y}
+                cx={q(r.end.x)}
+                cy={q(r.end.y)}
                 r={3.5}
                 fill={r.accent}
                 style={{ filter: `drop-shadow(0 0 6px ${r.accent})` }}
@@ -272,8 +286,8 @@ export function Globe({
           {/* pulse ring on the answering region */}
           <circle
             className="globe-pulse"
-            cx={regionPt.x}
-            cy={regionPt.y}
+            cx={q(regionPt.x)}
+            cy={q(regionPt.y)}
             r={9}
             fill="none"
             stroke={arcAccent}
@@ -289,11 +303,11 @@ export function Globe({
             style={{ filter: `drop-shadow(0 0 6px ${arcAccent})` }}
           />
           {/* origin dot */}
-          <circle cx={originPt.x} cy={originPt.y} r={5} fill="#0b1224" stroke="#22d3ee" strokeWidth={2} />
+          <circle cx={q(originPt.x)} cy={q(originPt.y)} r={5} fill="#0b1224" stroke="#22d3ee" strokeWidth={2} />
           {/* region dot */}
           <circle
-            cx={regionPt.x}
-            cy={regionPt.y}
+            cx={q(regionPt.x)}
+            cy={q(regionPt.y)}
             r={5}
             fill={arcAccent}
             style={{ filter: `drop-shadow(0 0 8px ${arcAccent})` }}
@@ -301,7 +315,7 @@ export function Globe({
 
           {/* RTT badge at the apex */}
           {badge && (
-            <g className="globe-badge" transform={`translate(${apex.x - badgeW / 2}, ${apex.y - 34})`}>
+            <g className="globe-badge" transform={`translate(${q(apex.x - badgeW / 2)}, ${q(apex.y - 34)})`}>
               <rect width={badgeW} height={26} rx={13} fill="#0e1830" stroke={badgeColor} strokeOpacity={0.6} />
               <text
                 x={badgeW / 2}

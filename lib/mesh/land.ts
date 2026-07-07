@@ -25,5 +25,9 @@ export function landPath(proj: Projection): string {
     .scale(radius)
     .rotate([-lon0, -lat0])
     .clipAngle(90);
-  return geoPath(projection)(LAND) ?? "";
+  // `.digits(1)` quantises the output to 0.1px. Trig differs in the last ULP between
+  // the server's and browser's V8, so full-precision coordinates would differ and trip
+  // a React hydration mismatch once this (client) component hydrates — rounding makes
+  // the server and client SVG byte-identical.
+  return geoPath(projection).digits(1)(LAND) ?? "";
 }
