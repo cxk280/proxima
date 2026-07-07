@@ -71,13 +71,32 @@ export function createSimulatedMesh(regions: Region[] = REGIONS): MeshProvider {
 export const mesh: MeshProvider = createSimulatedMesh();
 
 /**
- * Detect the visitor's approximate origin, client-side only. Tries precise geolocation
- * and falls back to a coarse IP-region guess when denied or unavailable.
+ * Ask our own server for a real IP-based origin (the server does the geo-IP lookup, so
+ * the browser never talks to a third party). Falls back to the honest default if the
+ * request fails or returns nonsense.
+ */
+async function ipOrigin(): Promise<Origin> {
+  try {
+    const res = await fetch("/api/geo", { cache: "no-store" });
+    if (res.ok) {
+      const o = (await res.json()) as Origin;
+      if (Number.isFinite(o?.lat) && Number.isFinite(o?.lon)) return o;
+    }
+  } catch {
+    /* fall through to the default */
+  }
+  return DEFAULT_ORIGIN;
+}
+
+/**
+ * Detect the visitor's origin, client-side. Prefers precise browser geolocation; when
+ * that's denied/unavailable, falls back to a real IP-based lookup (via `/api/geo`) so the
+ * viewer still sees roughly their own location — only dropping to the hardcoded default
+ * if the IP lookup also fails.
  */
 export async function detectOrigin(): Promise<Origin> {
-  if (typeof navigator === "undefined" || !navigator.geolocation) {
-    return DEFAULT_ORIGIN;
-  }
+  if (typeof navigator === "undefined") return DEFAULT_ORIGIN; // SSR guard
+  if (!navigator.geolocation) return ipOrigin();
   return new Promise<Origin>((resolve) => {
     navigator.geolocation.getCurrentPosition(
       (pos) =>
@@ -85,8 +104,9 @@ export async function detectOrigin(): Promise<Origin> {
           label: "your location",
           lat: pos.coords.latitude,
           lon: pos.coords.longitude,
+          source: "precise",
         }),
-      () => resolve(DEFAULT_ORIGIN),
+      () => resolve(ipOrigin()),
       { timeout: 4000, maximumAge: 600000 },
     );
   });

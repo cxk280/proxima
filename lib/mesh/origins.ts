@@ -41,13 +41,16 @@ export const LEADERBOARD_ORIGINS: Origin[] = [
 ];
 
 /**
- * Fallback origin used when geolocation is denied or unavailable (a coarse IP guess).
- * Deliberately not co-located with any region so the hero still draws a visible
- * origin→region route rather than a degenerate zero-length arc.
+ * Last-resort fallback used only when BOTH precise geolocation and the IP-based lookup
+ * fail (e.g. on localhost, where there is no public client IP). `source: "default"` keeps
+ * the UI honest — it is labelled as an approximate default, never claimed as the viewer's
+ * real IP region. Deliberately not co-located with any region so the hero still draws a
+ * visible origin→region route rather than a degenerate zero-length arc.
  */
 export const DEFAULT_ORIGIN: Origin = {
-  label: "your IP region",
+  label: "an approximate location",
   lat: 39.74,
   lon: -104.99,
   approximate: true,
+  source: "default",
 };
