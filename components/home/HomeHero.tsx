@@ -88,7 +88,11 @@ export function HomeHero() {
               <LatencyValue value={latency} className="text-xs" />
               <span>
                 {latency.real ? "measured from your device" : "round trip"}
-                {origin?.approximate ? " · using your IP region" : ""}
+                {origin?.source === "ip"
+                  ? " · using your IP region"
+                  : origin?.source === "default"
+                    ? " · approximate location"
+                    : ""}
               </span>
             </>
           ) : (

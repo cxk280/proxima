@@ -27,6 +27,9 @@ export interface Origin extends GeoPoint {
   label: string;
   /** True when derived from a coarse IP-region guess rather than precise geolocation. */
   approximate?: boolean;
+  /** How the origin was resolved — drives honest UI labelling: `precise` = browser
+   *  geolocation, `ip` = real IP-based lookup, `default` = the hardcoded fallback. */
+  source?: "precise" | "ip" | "default";
 }
 
 /** The result of homing a session from an origin onto a region. */
