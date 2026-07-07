@@ -74,13 +74,14 @@ EP=$(ssh root@155.138.214.114 'grep -oP "(?<=PROXIMA_REGION_ENDPOINTS=).*" /opt/
 ./deploy/app-deploy.sh "$EP"      # keeps regions real; carries the Anthropic key from deploy/.env
 ```
 
-To boot fresh responders instead: `./deploy/probes-up.sh ewr lhr nrt bom` then paste
-its printed JSON into `app-deploy.sh`.
+The live fleet is currently a single region (`bom`); the others were torn down to free
+Vultr quota. To boot fresh responders, pass whichever regions you want, e.g.
+`./deploy/probes-up.sh bom fra nrt`, then paste its printed JSON into `app-deploy.sh`.
 
 ## Teardown (after the demo)
 
 ```bash
-./deploy/probes-down.sh           # kills the 4-region fleet (tag proxima-probe only)
+./deploy/probes-down.sh           # kills the probe fleet (tag proxima-probe only)
 ```
 
 Stops the hourly probe cost. The app host (~$5–6/mo) can stay up for a live LinkedIn link,
