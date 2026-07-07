@@ -23,8 +23,9 @@ curl -s -X POST "$S/api/chat" -H 'content-type: application/json' \
   -d '{"messages":[{"role":"user","content":"say hi"}]}' | jq -c '{real}'
 ```
 
-Want: **app 200**, **6 healthy / 0 down**, voice **`real:true`**. A single transient
-`down` can appear right after a redeploy (cold probe) — re-run; it settles.
+Want: **app 200**, **1 healthy / 0 down** (the single `bom` region — every other region
+is modeled), voice **`real:true`**. A single transient `down` can appear right after a
+redeploy (cold probe) — re-run; it settles.
 
 Then open the HTTPS URL in the **exact browser window** you'll present from, so the
 Let's Encrypt cert is warm and the tab is ready.
@@ -74,13 +75,14 @@ EP=$(ssh root@155.138.214.114 'grep -oP "(?<=PROXIMA_REGION_ENDPOINTS=).*" /opt/
 ./deploy/app-deploy.sh "$EP"      # keeps regions real; carries the Anthropic key from deploy/.env
 ```
 
-To boot fresh responders instead: `./deploy/probes-up.sh ewr lhr nrt bom` then paste
-its printed JSON into `app-deploy.sh`.
+The live fleet is currently a single region (`bom`); the others were torn down to free
+Vultr quota. To boot fresh responders, pass whichever regions you want, e.g.
+`./deploy/probes-up.sh bom fra nrt`, then paste its printed JSON into `app-deploy.sh`.
 
 ## Teardown (after the demo)
 
 ```bash
-./deploy/probes-down.sh           # kills the 4-region fleet (tag proxima-probe only)
+./deploy/probes-down.sh           # kills the probe fleet (tag proxima-probe only)
 ```
 
 Stops the hourly probe cost. The app host (~$5–6/mo) can stay up for a live LinkedIn link,
