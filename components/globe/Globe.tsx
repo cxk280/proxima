@@ -1,7 +1,11 @@
-import { Fragment } from "react";
+"use client";
+
+import { Fragment, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
+  dragRotation,
   framingLongitude,
   graticulePaths,
+  landPath,
   project,
   REGIONS,
   type GeoPoint,
@@ -10,6 +14,7 @@ import {
   type ProjectedPoint,
   type Projection,
   type Region,
+  type Rotation,
 } from "@/lib/mesh";
 
 const HEALTH_COLOR: Record<Health, string> = {
@@ -37,6 +42,12 @@ function buildArc(a: ProjectedPoint, b: ProjectedPoint, cx: number, cy: number, 
   return { d, apex };
 }
 
+/** Quantise a projected pixel coordinate to 0.1px. The projection trig differs in the
+ *  last ULP between the server's and browser's V8, so rendering raw floats trips a React
+ *  hydration mismatch when this client component hydrates — rounding keeps the server and
+ *  client SVG byte-identical (the graticule/arc paths already round the same way). */
+const q = (n: number) => n.toFixed(1);
+
 export interface GlobeProps {
   /** Region dots to plot. Defaults to the full mesh. */
   regions?: Region[];
@@ -59,10 +70,12 @@ export interface GlobeProps {
 }
 
 /**
- * The animated wireframe globe — the hero of every latency-centric view. Pure and
- * deterministic: it projects lat/lon onto an orthographic sphere and draws the
- * graticule, region dots, and the origin→region arc from props alone (SSR-safe). The
- * arc-draw, pulse, and glow are CSS animations.
+ * The animated wireframe globe — the hero of every latency-centric view. It projects
+ * lat/lon onto an orthographic sphere and draws real coastlines, the graticule, region
+ * dots, and the origin→region arc. The initial render is deterministic and SSR-safe
+ * (rotation is seeded from props); once the viewer click/touch-drags, they take over
+ * the rotation so they can spin the sphere and find any node. Arc-draw, pulse, and glow
+ * are CSS animations.
  */
 export function Globe({
   regions = REGIONS,
@@ -79,11 +92,50 @@ export function Globe({
   const cy = size / 2;
   const radius = size * 0.46;
 
-  const lon0 =
+  // Auto-framing from props: longitude that best frames the active route (or the lone
+  // point), with a gentle tilt. This is what renders on the server and until first drag.
+  const autoLon0 =
     origin && region ? framingLongitude(origin, region) : (region?.lon ?? origin?.lon ?? 10);
-  const proj: Projection = { cx, cy, radius, lon0, lat0: 12 };
+
+  // Once the viewer drags, `rotation` holds their manual view and overrides auto-framing.
+  const [rotation, setRotation] = useState<Rotation | null>(null);
+  const [grabbing, setGrabbing] = useState(false);
+  // The single active gesture: which pointer owns it, where it started, and the
+  // orientation at that moment. A second finger is ignored until the first lifts.
+  const gesture = useRef<{ id: number; x: number; y: number; start: Rotation } | null>(null);
+
+  const lon0 = rotation?.lon0 ?? autoLon0;
+  const lat0 = rotation?.lat0 ?? 12;
+  const proj: Projection = { cx, cy, radius, lon0, lat0 };
+
+  const onPointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
+    if (gesture.current) return; // already dragging with another pointer — ignore
+    gesture.current = { id: e.pointerId, x: e.clientX, y: e.clientY, start: { lon0, lat0 } };
+    setGrabbing(true);
+    // Capture so the drag keeps tracking even when the cursor leaves the sphere. Guard
+    // the rare browsers where the pointer is already gone (throws) — the drag still
+    // works from element-level moves.
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* non-fatal: capture unavailable */
+    }
+  };
+  const onPointerMove = (e: ReactPointerEvent<SVGSVGElement>) => {
+    const g = gesture.current;
+    if (!g || e.pointerId !== g.id) return;
+    setRotation(dragRotation(g.start, e.clientX - g.x, e.clientY - g.y, radius));
+  };
+  const endGesture = (e: ReactPointerEvent<SVGSVGElement>) => {
+    if (gesture.current && e.pointerId !== gesture.current.id) return;
+    gesture.current = null;
+    setGrabbing(false);
+  };
 
   const graticule = graticulePaths(proj);
+  // Coastlines re-project only when the orientation/size actually changes — not on the
+  // extra renders a drag's grab-state toggle triggers.
+  const land = useMemo(() => landPath({ cx, cy, radius, lon0, lat0 }), [cx, cy, radius, lon0, lat0]);
   const arcAccent = accent ?? (region ? HEALTH_COLOR[region.health] : "#22d3ee");
 
   const originPt = origin ? project(origin, proj) : null;
@@ -115,9 +167,22 @@ export function Globe({
       role="img"
       aria-label={
         region && rttMs != null
-          ? `Globe showing a ${rttMs}ms route to ${region.city}`
-          : "Globe of Proxima's GPU mesh regions"
+          ? `Globe showing a ${rttMs}ms route to ${region.city}. Drag to rotate.`
+          : "Globe of Proxima's GPU mesh regions. Drag to rotate."
       }
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endGesture}
+      onPointerCancel={endGesture}
+      // pan-y keeps vertical page-scroll working on touch (so the globe never traps the
+      // page) while horizontal swipes spin the sphere; a mouse gets full 2-axis drag.
+      style={{
+        cursor: grabbing ? "grabbing" : "grab",
+        touchAction: "pan-y",
+        // Dragging/double-tapping the globe must not select the RTT-badge or dot text.
+        userSelect: "none",
+        WebkitUserSelect: "none",
+      }}
     >
       <defs>
         <radialGradient id="globe-fill" cx="42%" cy="38%" r="72%">
@@ -144,6 +209,21 @@ export function Globe({
       />
       <circle cx={cx} cy={cy} r={radius} fill="url(#globe-fill)" stroke="#22d3ee" strokeOpacity={0.32} strokeWidth={1.5} />
 
+      {/* Real coastlines — filled land over the darker water so it's obvious which
+          landmass (and therefore which edge node) you're looking at. The fill is kept a
+          clear step lighter than the water so continents read on their own, with a
+          brighter coastline stroke reinforcing the edge. */}
+      {land && (
+        <path
+          d={land}
+          fill="#2a597f"
+          fillOpacity={0.95}
+          stroke="#5fdcef"
+          strokeOpacity={0.6}
+          strokeWidth={0.7}
+        />
+      )}
+
       {/* Graticule */}
       <g stroke="#22d3ee" strokeOpacity={0.16} strokeWidth={1} fill="none">
         {graticule.map((d, i) => (
@@ -161,8 +241,8 @@ export function Globe({
           return (
             <circle
               key={r.id}
-              cx={p.x}
-              cy={p.y}
+              cx={q(p.x)}
+              cy={q(p.y)}
               r={isActive ? 4.5 : 2.6}
               fill={color}
               opacity={isActive ? 1 : 0.7}
@@ -189,8 +269,8 @@ export function Globe({
                 style={{ filter: `drop-shadow(0 0 5px ${r.accent})` }}
               />
               <circle
-                cx={r.end.x}
-                cy={r.end.y}
+                cx={q(r.end.x)}
+                cy={q(r.end.y)}
                 r={3.5}
                 fill={r.accent}
                 style={{ filter: `drop-shadow(0 0 6px ${r.accent})` }}
@@ -206,8 +286,8 @@ export function Globe({
           {/* pulse ring on the answering region */}
           <circle
             className="globe-pulse"
-            cx={regionPt.x}
-            cy={regionPt.y}
+            cx={q(regionPt.x)}
+            cy={q(regionPt.y)}
             r={9}
             fill="none"
             stroke={arcAccent}
@@ -223,11 +303,11 @@ export function Globe({
             style={{ filter: `drop-shadow(0 0 6px ${arcAccent})` }}
           />
           {/* origin dot */}
-          <circle cx={originPt.x} cy={originPt.y} r={5} fill="#0b1224" stroke="#22d3ee" strokeWidth={2} />
+          <circle cx={q(originPt.x)} cy={q(originPt.y)} r={5} fill="#0b1224" stroke="#22d3ee" strokeWidth={2} />
           {/* region dot */}
           <circle
-            cx={regionPt.x}
-            cy={regionPt.y}
+            cx={q(regionPt.x)}
+            cy={q(regionPt.y)}
             r={5}
             fill={arcAccent}
             style={{ filter: `drop-shadow(0 0 8px ${arcAccent})` }}
@@ -235,7 +315,7 @@ export function Globe({
 
           {/* RTT badge at the apex */}
           {badge && (
-            <g className="globe-badge" transform={`translate(${apex.x - badgeW / 2}, ${apex.y - 34})`}>
+            <g className="globe-badge" transform={`translate(${q(apex.x - badgeW / 2)}, ${q(apex.y - 34)})`}>
               <rect width={badgeW} height={26} rx={13} fill="#0e1830" stroke={badgeColor} strokeOpacity={0.6} />
               <text
                 x={badgeW / 2}
